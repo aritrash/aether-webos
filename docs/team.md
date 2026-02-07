@@ -82,8 +82,8 @@ The Web Dev is unique in this project: they build the user interface that runs o
 
 ## Cross-Role Collaboration
 
-# | Collaboration | Goal |
-| --- | --- |
+| **Collaboration** | **Goal** |
+|-------------------|------------------------------- |
 | Architect + Memory | Defining where the kernel lives vs. where the stacks live. |
 | Memory + Driver | Ensuring MMIO addresses are mapped as "Device Memory" (Non-cacheable). |
 | Driver + Web | Designing the TCP/IP or raw packet bridge to serve the UI. |
