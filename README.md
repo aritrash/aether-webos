@@ -10,10 +10,11 @@ Toolchain Setup
 
 Most Linux distros have the AArch64 cross-compiler available in their standard repositories.
 
-Bash
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Update and install dependencies  sudo apt update  sudo apt install -y gcc-aarch64-none-elf binutils-aarch64-none-elf qemu-system-arm make git   `
-
+```Bash
+  # Update and install dependencies  
+  sudo apt update  
+  sudo apt install -y gcc-aarch64-none-elf binutils-aarch64-none-elf qemu-system-arm make git 
+```
 _Note for Kali users: Ensure your apt sources are updated to avoid version mismatches with QEMU._
 
 ### **Windows (MSYS2)**
@@ -27,10 +28,9 @@ For Windows devs, MSYS2 provides the best environment for GNU-like building.
 3.  Run the following command:
     
 
-Bash
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   pacman -S mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-arm-none-eabi-gcc git   `
-
+```Bash
+pacman -S mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-arm-none-eabi-gcc git   `
+```
 _Note: Ensure C:\\msys64\\ucrt64\\bin is added to your Windows PATH environment variable._
 
 System Architecture
@@ -55,7 +55,10 @@ System Architecture
 
 ### Memory Mapping (Physical)
 
-**AddressDescription**0x09000000UART PL011 (Serial Output)0x40000000Start of RAM0x40080000Kernel Entry Point (Aether Base)
+|**Address**| **Description** |
+| `0x09000000` | UART PL011 (Serial Output) |
+| `0x40000000` | Start of RAM |
+| `0x40080000` | Kernel Entry Point (Aether Base) |
 
 Building & Running
 ---------------------
@@ -64,18 +67,24 @@ Building & Running
 
 We use a custom linker script (linker.ld) to ensure the AArch64 binary is structured correctly for the virt machine.
 
-Bash
+```Bash
+# Assemble boot.S  
+aarch64-none-elf-gcc -c src/boot.S -o boot.o  
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # Assemble boot.S  aarch64-none-elf-gcc -c src/boot.S -o boot.o  # Compile Kernel (C example)  aarch64-none-elf-gcc -ffreestanding -c src/kernel.c -o kernel.o  # Link everything  aarch64-none-elf-ld -T linker.ld boot.o kernel.o -o aether.elf   `
+# Compile Kernel (C example)  
+aarch64-none-elf-gcc -ffreestanding -c src/kernel.c -o kernel.o  
 
+# Link everything  
+aarch64-none-elf-ld -T linker.ld boot.o kernel.o -o aether.elf
+```
 ### 2\. Execution (QEMU)
 
 To run Aether in a headless server environment with serial output:
 
-Bash
+```Bash
+qemu-system-aarch64 -M virt -cpu cortex-a57 -display none -serial stdio -kernel aether.elf
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   qemu-system-aarch64 -M virt -cpu cortex-a57 -display none -serial stdio -kernel aether.elf   `
-
+```
 Roadmap: The Web GUI
 -----------------------
 
