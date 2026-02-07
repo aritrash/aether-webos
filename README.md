@@ -55,9 +55,10 @@ System Architecture
 
 ### Memory Mapping (Physical)
 
-|**Address**| **Description** |
-| `0x09000000` | UART PL011 (Serial Output) |
-| `0x40000000` | Start of RAM |
+|**Address**   | **Description**                  |
+|--------------|----------------------------------|
+| `0x09000000` | UART PL011 (Serial Output)       |
+| `0x40000000` | Start of RAM                     |
 | `0x40080000` | Kernel Entry Point (Aether Base) |
 
 Building & Running
