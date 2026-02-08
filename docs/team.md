@@ -6,7 +6,7 @@ This document outlines the core roles and responsibilities for the Aether OS dev
 
 ## Project Architect
 
-**Lead:** (Your Name/Handle)
+**Lead:** Aritrash Sarkar
 
 The Architect is responsible for the "Big Picture" and the fundamental bootstrap of the system.
 
@@ -24,6 +24,8 @@ The Architect is responsible for the "Big Picture" and the fundamental bootstrap
 * * *
 
 ## Memory Mapping Engineer
+
+**Lead:** Ayush Jain
 
 **Focus:** MMU (Memory Management Unit) & Address Spaces
 
@@ -43,6 +45,8 @@ In ARMv8-A, memory management is significantly more complex than x86 segmentatio
 * * *
 
 ## Driver Developer
+
+**Lead:** Pritam Mondal
 
 **Focus:** Hardware Communication (UART & VirtIO)
 
