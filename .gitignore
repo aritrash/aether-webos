@@ -1,0 +1,25 @@
+# --- Build Artifacts ---
+# Exclude the build folder where object files live
+build/
+
+# Exclude the final kernel images
+*.img
+*.elf
+*.bin
+
+# --- MSYS2 / Windows specific ---
+# Exclude potential Windows thumbnail caches or desktop files
+Thumbs.db
+desktop.ini
+
+# --- Editor Specific ---
+# VS Code
+.vscode/
+# Vim swap files
+*.swp
+# Logs
+*.log
+
+# --- Toolchain specific ---
+# If you ever generate map files for debugging memory addresses
+*.map

@@ -1,0 +1,8 @@
+# Force the Pi 4 to boot into 64-bit mode
+arm_64bit=1
+
+# Use the PL011 UART (better for debugging than the MiniUART)
+enable_uart=1
+
+# Tell the Pi not to load a standard Linux kernel
+kernel=kernel8.img
