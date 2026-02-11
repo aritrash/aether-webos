@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "uart.h"
+#include "utils.h"
 
 static uint64_t heap_ptr = HEAP_START;
 

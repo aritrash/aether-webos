@@ -71,6 +71,10 @@ $(BUILD_DIR)/memory.o: $(SRC_DIR)/memory.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/mmu.o: $(SRC_DIR)/mmu.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/asm_utils.o: $(SRC_DIR)/asm_utils.S
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(ASMFLAGS) -c $< -o $@
