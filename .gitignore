@@ -1,0 +1,28 @@
+
+# Exclude the final kernel images
+*.elf
+*.bin
+
+# Run files
+run.sh
+# --- MSYS2 / Windows specific ---
+# Exclude potential Windows thumbnail caches or desktop files
+Thumbs.db
+desktop.ini
+
+# --- Editor Specific ---
+# VS Code
+.vscode/
+# Vim swap files
+*.swp
+# Logs
+*.log
+*.sh
+<<<<<<< HEAD
+
+=======
+*.pdf
+>>>>>>> b4434c3 (Update: Enable MMU)
+# --- Toolchain specific ---
+# If you ever generate map files for debugging memory addresses
+*.map
