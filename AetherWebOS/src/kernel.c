@@ -4,6 +4,7 @@
 #include "timer.h"
 #include "mmu.h"
 #include "memory.h"
+#include "pcie.h"
 
 extern void exceptions_init(void);
 
@@ -25,6 +26,9 @@ void kernel_main() {
         banner++;
     }
 
+    uart_puts("\r\n[INFO] Kernel Loaded at: ");
+    uart_put_hex((uint64_t)&kernel_main); // Verify this matches 0x4008...
+    uart_puts("\r\n");
     uart_puts("\r\n[OK] Aether Core Online.");
     uart_puts("\r\n[OK] UART Initialized - 115200 baud, 8N1.");
     uart_puts("\r\n[INFO] Booting on Raspberry Pi 4 (BCM2711)\r\n");
@@ -33,7 +37,15 @@ void kernel_main() {
     uart_puts("[OK] Exception Vector Table Loaded.\r\n");
     mmu_init();
     uart_puts("[OK] MMU and Caches Enabled.\r\n");
+    uart_puts("[DEBUG] Post-MMU check: Still alive!\r\n");
 
+    pcie_init();
+    uart_puts("[OK] PCIe Enumeration Complete.\r\n");
+    uint32_t vendor_id = pcie_read_config(0, 0, 0, 0);
+    uart_puts("[DEBUG] Bus 0 Dev 0 ID: ");
+    uart_put_hex(vendor_id);
+    kmalloc_init();
+    uart_puts("\r\n[OK] Kernel Heap Initialized.\r\n");
     //Enable the GIC and Timer
     gic_init();
     uart_puts("[OK] GIC Initialized.\r\n");

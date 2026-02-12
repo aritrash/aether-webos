@@ -58,9 +58,13 @@ sync_el1h:
     str x30, [sp, #16 * 15]
 
     /* DEBUG: Direct UART Write '!' to confirm handler entry */
-    ldr x4, =0xFE201000      // UART0 Base (RPi4 Physical)
+#ifdef BOARD_RPI4
+    ldr x4, =0xFE201000      // RPi4 Physical UART
+#else
+    ldr x4, =0x09000000      // QEMU VIRT Physical UART
+#endif
     mov w5, #33              // ASCII '!'
-    str w5, [x4]             
+    str w5, [x4]            
 
     /* 2. Prepare arguments for C handler */
     mrs x0, esr_el1   // Arg 0: Syndrome

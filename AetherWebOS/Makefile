@@ -3,99 +3,104 @@ CC = aarch64-none-elf-gcc
 LD = aarch64-none-elf-ld
 OBJCOPY = aarch64-none-elf-objcopy
 
-# Flags
-# -ffreestanding: No standard libraries
-# -nostdlib: Don't link system startup files
-# -mcpu=cortex-a72: Target Raspberry Pi 4 CPU
-# -Iinclude tells the compiler to add the 'include' folder to its search path
+# --- Platform Toggle Logic ---
+# Usage: 'make BOARD=RPI4' or 'make BOARD=VIRT' (Default is VIRT)
+BOARD ?= VIRT
+CFLAGS += -DBOARD_$(BOARD)
 
+# --- Flags ---
 COMPILER_HEADERS = $(shell $(CC) -print-file-name=include)
-CFLAGS = -Wall -O2 -ffreestanding -nostdinc -nostdlib -mcpu=cortex-a72 -Iinclude -I"$(COMPILER_HEADERS)"
-ASMFLAGS = -mcpu=cortex-a72
+COMMON_FLAGS = -mcpu=cortex-a72 -Iinclude -I"$(COMPILER_HEADERS)"
+CFLAGS += $(COMMON_FLAGS) -Wall -O2 -ffreestanding -nostdinc -nostdlib
+ASMFLAGS = $(COMMON_FLAGS)
 
-# Directories
+# --- Directories ---
 SRC_DIR = src
 ARCH_DIR = arch
 BUILD_DIR = build
+ASSETS_DIR = assets
 
-# Files
-# Add build/utils.o to your object list
+# --- Files ---
 OBJ_FILES = $(BUILD_DIR)/boot.o \
             $(BUILD_DIR)/kernel.o \
             $(BUILD_DIR)/uart.o \
-			$(BUILD_DIR)/mmu.o \
+            $(BUILD_DIR)/mmu.o \
             $(BUILD_DIR)/vectors.o \
             $(BUILD_DIR)/exception.o \
             $(BUILD_DIR)/utils.o \
-			$(BUILD_DIR)/asm_utils.o \
-			$(BUILD_DIR)/timer.o \
-			$(BUILD_DIR)/gic.o \
-			$(BUILD_DIR)/memory.o \
+            $(BUILD_DIR)/asm_utils.o \
+            $(BUILD_DIR)/timer.o \
+            $(BUILD_DIR)/pcie.o \
+            $(BUILD_DIR)/gic.o \
+            $(BUILD_DIR)/memory.o \
             $(BUILD_DIR)/banner.o
 
 all: kernel8.img
 
+# --- Pattern Rules (Cleans up the file) ---
+
+# Compile C files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Assemble .S files from arch directory
 $(BUILD_DIR)/boot.o: $(ARCH_DIR)/boot.S
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(ASMFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/kernel.o: $(SRC_DIR)/kernel.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/uart.o: $(SRC_DIR)/uart.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/utils.o: $(SRC_DIR)/utils.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/vectors.o: $(SRC_DIR)/vectors.S
+# Assemble .S files from src directory (vectors, asm_utils)
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(ASMFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/exception.o: $(SRC_DIR)/exception.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/timer.o: $(SRC_DIR)/timer.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/gic.o: $(SRC_DIR)/gic.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/memory.o: $(SRC_DIR)/memory.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/mmu.o: $(SRC_DIR)/mmu.c
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/asm_utils.o: $(SRC_DIR)/asm_utils.S
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(ASMFLAGS) -c $< -o $@
-
-$(BUILD_DIR)/banner.o: assets/banner.txt
+# Handle Binary Assets
+$(BUILD_DIR)/banner.o: $(ASSETS_DIR)/banner.txt
 	@mkdir -p $(BUILD_DIR)
 	$(OBJCOPY) -I binary -O elf64-littleaarch64 -B aarch64 $< $@
 
+# --- Linking ---
+
+# Define the kernel load address for each platform
+ifeq ($(BOARD), VIRT)
+    KERNEL_ADDR = 0x40080000
+    QEMU_MACHINE = virt,gic-version=3
+    QEMU_EXTRA = -cpu max -m 1G -display none 
+else
+    KERNEL_ADDR = 0x80000
+    QEMU_MACHINE = raspi4b
+    QEMU_EXTRA = 
+endif
+
+# Pass the KERNEL_START symbol to the linker
+LDFLAGS = -T linker.ld --defsym KERNEL_START=$(KERNEL_ADDR)
+
 kernel8.img: $(OBJ_FILES)
-	$(LD) -T linker.ld -o $(BUILD_DIR)/aether.elf $(OBJ_FILES)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/aether.elf $(OBJ_FILES)
 	$(OBJCOPY) $(BUILD_DIR)/aether.elf -O binary kernel8.img
+
+# --- Maintenance ---
 
 clean:
 	rm -rf $(BUILD_DIR) *.img
 
-.PHONY: run
-run: all
-	@echo "Launching Aether OS in QEMU..."
-	qemu-system-aarch64 -M raspi4b -serial stdio -kernel kernel8.img
+# --- Execution ---
 
-.PHONY: debug
+.PHONY: run debug clean all
+
+# Logic to pick QEMU flags based on board
+ifeq ($(BOARD), VIRT)
+    QEMU_MACHINE = virt,gic-version=3
+    QEMU_EXTRA = -cpu max -m 1G -display none 
+else
+    QEMU_MACHINE = raspi4b
+    QEMU_EXTRA = 
+endif
+
+run: all
+	@echo "Launching Aether OS ($(BOARD) Mode) in QEMU..."
+	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) -serial stdio -kernel kernel8.img
+
 debug: all
-	@echo "Launching in Debug Mode (Waiting for GDB)..."
-	qemu-system-aarch64 -M raspi4b -serial stdio -S -s -kernel kernel8.img
+	@echo "Launching $(BOARD) in Debug Mode (Waiting for GDB)..."
+	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) -serial stdio -S -s -kernel kernel8.img

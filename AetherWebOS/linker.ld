@@ -1,7 +1,10 @@
 SECTIONS
 {
-    /* The Pi 4 loads the 64-bit kernel at this specific address */
-    . = 0x80000;     
+    /* * We use a symbol for the start address so we can toggle between:
+     * RPi4: 0x80000
+     * VIRT: 0x40080000 (standard load point for QEMU virt)
+     */
+    . = KERNEL_START;     
 
     .text : {
         KEEP(*(.text.boot))
@@ -35,10 +38,17 @@ SECTIONS
     
     __bss_size = (__bss_end - __bss_start) >> 3;
 
-    /* Stack Setup: 4KB space. */
     . = ALIGN(16);
     . += 0x1000; 
     stack_top = .;
+
+    /* Align the Page Tables to 4KB for the MMU */
+    . = ALIGN(4096);
+    __pgtbl_start = .;
+    .pgtbl : {
+        *(.pgtbl)
+    }
+    __pgtbl_end = .;
 
     _end = .;
 }

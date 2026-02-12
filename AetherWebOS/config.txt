@@ -6,3 +6,5 @@ enable_uart=1
 
 # Tell the Pi not to load a standard Linux kernel
 kernel=kernel8.img
+
+dtoverlay=pcie-brcm-stb

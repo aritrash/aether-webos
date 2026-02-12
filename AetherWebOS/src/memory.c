@@ -5,7 +5,7 @@
 static uint64_t heap_ptr = HEAP_START;
 
 void kmalloc_init() {
-    uart_puts("[OK] Heap Allocator Initialized at 0x");
+    uart_puts("\r\n[OK] Heap Allocator Initialized at 0x");
     uart_put_hex(HEAP_START);
     uart_puts("\r\n");
 }
