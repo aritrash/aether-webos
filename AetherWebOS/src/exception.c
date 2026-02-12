@@ -58,21 +58,25 @@ void handle_irq_exception(uint64_t esr, uint64_t elr, uint64_t far, trap_frame_t
 #ifdef BOARD_RPI4
     iar = GICC_IAR;
 #else
+    // GICv3: Acknowledge the interrupt
     asm volatile("mrs %0, ICC_IAR1_EL1" : "=r" (iar));
 #endif
 
     uint32_t irq_id = iar & 0x3FF;
 
     if (irq_id == TIMER_IRQ_ID) {
-        uart_puts("."); 
+        uart_puts("."); // Heartbeat!
+        
         uint64_t freq;
         asm volatile ("mrs %0, cntfrq_el0" : "=r" (freq));
-        asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq / 2));
+        // Reset timer for next 1 second interval
+        asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq));
     }
 
 #ifdef BOARD_RPI4
     GICC_EOIR = iar;
 #else
+    // GICv3: End of Interrupt
     asm volatile("msr ICC_EOIR1_EL1, %0" : : "r" (iar));
 #endif
 }

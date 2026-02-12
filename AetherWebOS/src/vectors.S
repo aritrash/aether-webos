@@ -20,7 +20,7 @@ exception_vector_table:
 
     /* Current EL with SPx */
     ventry sync_el1h
-    ventry irq_invalid_el1h
+    ventry irq_el1h
     ventry fiq_invalid_el1h
     ventry error_invalid_el1h
 
@@ -126,7 +126,7 @@ exceptions_init:
     isb              // Flush pipeline
     ret
 
-irq_invalid_el1h:
+irq_el1h:
     /* 1. Save Context */
     sub sp, sp, #256
     stp x0, x1, [sp, #16 * 0]

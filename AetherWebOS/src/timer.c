@@ -10,9 +10,9 @@ static uint64_t get_timer_freq() {
 void timer_init() {
     uint64_t freq = get_timer_freq();
     
-    // Set timer to fire in 0.5 seconds
+    // Set timer to fire in 1 second
     // It's often safer to use tval (Timer Value) for relative offsets
-    asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq / 2));
+    asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq));
 
     /*
      * Enable the timer (Bit 0) and UNMASK the interrupt (Bit 1 = 0)

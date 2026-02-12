@@ -61,18 +61,19 @@ $(BUILD_DIR)/banner.o: $(ASSETS_DIR)/banner.txt
 
 # --- Linking ---
 
-# Define the kernel load address for each platform
+# Logic to pick QEMU flags based on board
 ifeq ($(BOARD), VIRT)
     KERNEL_ADDR = 0x40080000
-    QEMU_MACHINE = virt,gic-version=3
-    QEMU_EXTRA = -cpu max -m 1G -display none 
+    # Force version 4.2+ to ensure standard ECAM behavior and GICv3
+    QEMU_MACHINE = virt-4.2,gic-version=3,highmem=off 
+    # Use 'max' but ensure we aren't virtualizing EL2 if we don't need it
+    QEMU_EXTRA = -cpu max -m 1G -display none -machine virtualization=off
 else
     KERNEL_ADDR = 0x80000
     QEMU_MACHINE = raspi4b
     QEMU_EXTRA = 
 endif
 
-# Pass the KERNEL_START symbol to the linker
 LDFLAGS = -T linker.ld --defsym KERNEL_START=$(KERNEL_ADDR)
 
 kernel8.img: $(OBJ_FILES)
@@ -90,8 +91,9 @@ clean:
 
 # Logic to pick QEMU flags based on board
 ifeq ($(BOARD), VIRT)
-    QEMU_MACHINE = virt,gic-version=3
-    QEMU_EXTRA = -cpu max -m 1G -display none 
+    KERNEL_ADDR = 0x40080000
+    QEMU_MACHINE = virt-4.2,gic-version=3,highmem=off 
+    QEMU_EXTRA = -cpu max -m 1G -display none -machine virtualization=off
 else
     QEMU_MACHINE = raspi4b
     QEMU_EXTRA = 
@@ -99,8 +101,11 @@ endif
 
 run: all
 	@echo "Launching Aether OS ($(BOARD) Mode) in QEMU..."
-	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) -serial stdio -kernel kernel8.img
+	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) \
+	-serial stdio \
+	-device virtio-net-pci,bus=pcie.0 \
+	-kernel kernel8.img
 
 debug: all
 	@echo "Launching $(BOARD) in Debug Mode (Waiting for GDB)..."
-	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) -serial stdio -S -s -kernel kernel8.img
+	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) -serial stdio -device virtio-net-pci -S -s -kernel kernel8.img
