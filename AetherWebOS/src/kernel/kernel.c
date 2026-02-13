@@ -41,9 +41,6 @@ void kernel_main() {
 
     pcie_init();
     uart_puts("[OK] PCIe Enumeration Complete.\r\n");
-    // uint32_t vendor_id = pcie_read_config(0, 0, 0, 0);
-    // uart_puts("[DEBUG] Bus 0 Dev 0 ID: ");
-    // uart_put_hex(vendor_id);
     kmalloc_init();
     uart_puts("[OK] Kernel Heap Initialized.\r\n");
     //Enable the GIC and Timer
