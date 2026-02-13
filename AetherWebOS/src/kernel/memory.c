@@ -1,6 +1,6 @@
-#include "memory.h"
-#include "uart.h"
-#include "utils.h"
+#include "include/kernel/memory.h"
+#include "include/drivers/uart.h"
+#include "include/common/utils.h"
 
 static uint64_t heap_ptr = HEAP_START;
 
