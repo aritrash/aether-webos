@@ -1,5 +1,6 @@
 #include "virtio_net.h"
 #include "virtio_pci.h"
+#include "virtio_ring.h"
 #include "uart.h"
 #include "utils.h"
 

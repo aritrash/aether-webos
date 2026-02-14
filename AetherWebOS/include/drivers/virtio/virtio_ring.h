@@ -59,4 +59,11 @@ struct virtqueue {
     uint16_t last_used_idx;
 };
 
+// Forward declaration to avoid circular include with virtio_pci.h
+struct virtio_pci_device; 
+
+void virtqueue_init(struct virtqueue *vq, uint16_t size, void *p);
+uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint32_t len, uint16_t flags);
+void virtqueue_notify(struct virtio_pci_device *vdev, uint16_t queue_index);
+
 #endif

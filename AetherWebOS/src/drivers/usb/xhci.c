@@ -1,207 +1,102 @@
-#include <stdint.h>
-
-#include "uart.h"
-#include "drivers/pcie.h"
 #include "drivers/usb/xhci.h"
+#include "drivers/pcie.h"
+#include "kernel/memory.h"
+#include "uart.h"
 
+/* xHCI Legacy Support Capability ID */
+#define XHCI_EXT_CAP_LEGACY    1
+#define USB_BIOS_OWNED        (1 << 16)
+#define USB_OS_OWNED          (1 << 24)
 
-/* MMU mapping function (from memory subsystem) */
-extern void* ioremap(uint64_t phys_addr, uint64_t size);
-
-
-/* ================================
-   xHCI Extended Capability
-   ================================ */
-
-#define XHCI_EXT_CAP_LEGACY   1
-
-#define USB_BIOS_OWNED   (1 << 16)
-#define USB_OS_OWNED     (1 << 24)
-
-#define USBCMD_HCRST     (1 << 1)
-
-
-/* ================================
-   Small Delay
-   ================================ */
-
-static void delay(uint32_t count)
-{
-    while (count--)
-        asm volatile("nop");
-}
-
-
-/* ================================
-   Print Hex (Debug)
-   ================================ */
-
-static void print_hex(uint32_t val)
-{
-    char hex[] = "0123456789ABCDEF";
-
-    uart_puts("0x");
-
-    for (int i = 28; i >= 0; i -= 4)
-        uart_putc(hex[(val >> i) & 0xF]);
-}
-
-
-/* ================================
-   BIOS → OS Handshake
-   ================================ */
-
-static void xhci_claim_ownership(struct xhci_cap_regs *cap)
-{
+/**
+ * BIOS -> OS Handshake (The "Ownership" Logic)
+ * Ensures the firmware/BIOS releases control of the USB controller
+ * before Aether OS starts writing to the operational registers.
+ */
+static void xhci_claim_ownership(struct xhci_cap_regs *cap) {
+    // HCC_PARAMS1 contains the pointer to the first Extended Capability
     uint32_t hcc = cap->hcc_params1;
+    uint32_t offset = (hcc >> 16) << 2; // Offset is in DWORDS
 
-    /* Extended capability pointer */
-    uint32_t offset = (hcc >> 16) << 2;
+    if (!offset) return;
 
-    if (!offset)
-        return;
-
-
-    volatile uint32_t *ext =
-        (volatile uint32_t *)((uint8_t*)cap + offset);
-
+    // Pointer to the first capability in the chain
+    volatile uint32_t *ext = (volatile uint32_t *)((uint8_t*)cap + offset);
 
     while (ext) {
-
         uint32_t header = *ext;
-
         uint8_t cap_id   = header & 0xFF;
         uint8_t next_ptr = (header >> 8) & 0xFF;
 
-
-        /* USB Legacy Support */
         if (cap_id == XHCI_EXT_CAP_LEGACY) {
+            uart_puts("[USB] Legacy Support found. Requesting ownership...\r\n");
 
-            uart_puts("[USB] Legacy Support found\n");
-
+            // The 'USB Legacy Support Control/Status' register is at ext + 1
             volatile uint32_t *ctrl = ext + 1;
 
-            /* Request OS ownership */
+            // 1. Set the OS Ownership bit
             *ctrl |= USB_OS_OWNED;
 
-            /* Wait for BIOS release */
-            while (*ctrl & USB_BIOS_OWNED);
+            // 2. Wait for BIOS to clear its ownership bit
+            // In a real production kernel, we would add a timeout here.
+            while (*ctrl & USB_BIOS_OWNED) {
+                asm volatile("nop");
+            }
 
-            uart_puts("[USB] BIOS ownership released\n");
+            uart_puts("[OK] USB: BIOS ownership released.\r\n");
             return;
         }
 
-
-        if (!next_ptr)
-            break;
-
-        ext = (volatile uint32_t *)
-              ((uint8_t*)cap + (next_ptr << 2));
+        if (!next_ptr) break;
+        ext = (volatile uint32_t *)((uint8_t*)cap + (next_ptr << 2));
     }
 }
 
+/**
+ * Main xHCI Initializer
+ * This matches the signature void (*pci_init_fn)(uint32_t, uint32_t, uint32_t)
+ */
+void xhci_init(uint32_t bus, uint32_t dev, uint32_t func) {
+    uart_puts("[INFO] USB: Found xHCI Controller. Mapping registers...\r\n");
 
-/* ================================
-   Main xHCI Init
-   ================================ */
+    // 1. Get Physical Address from BAR0 (PCI Offset 0x10)
+    uint32_t bar_val = pcie_read_config(bus, dev, func, 0x10);
+    uint64_t phys_addr = (uint64_t)(bar_val & ~0xF);
 
-int xhci_hc_init(void)
-{
-    uart_puts("\n[USB] Initializing xHCI...\n");
-
-
-    /* --------------------------------
-       1. Find Controller via PCIe
-       -------------------------------- */
-
-    uint64_t bar0 = 0;
-
-    if (pcie_find_xhci(&bar0) != 0) {
-
-        uart_puts("[USB] ERROR: xHCI not found\n");
-        return -1;
-    }
-
-
-    uart_puts("[USB] BAR0 = ");
-    print_hex((uint32_t)bar0);
-    uart_puts("\n");
-
-
-    /* --------------------------------
-       2. Map BAR
-       -------------------------------- */
-
-    struct xhci_cap_regs *cap =
-        (struct xhci_cap_regs *)ioremap(bar0, 0x4000);
-
+    // 2. Map using Adrija's ioremap
+    // xHCI BARs are usually large; 16KB (0x4000) covers Cap + Op + Doorbell
+    struct xhci_cap_regs *cap = (struct xhci_cap_regs *)ioremap(phys_addr, 0x4000);
+    
     if (!cap) {
-
-        uart_puts("[USB] ERROR: ioremap failed\n");
-        return -1;
+        uart_puts("[ERROR] USB: ioremap failed for xHCI.\r\n");
+        return;
     }
 
-
-    /* --------------------------------
-       3. Read Info
-       -------------------------------- */
-
-    uart_puts("[USB] Version: ");
-    print_hex(cap->hci_version);
-    uart_puts("\n");
-
-
-    uint32_t hcs1 = cap->hcs_params1;
-
-    uint32_t slots = hcs1 & 0xFF;
-    uint32_t ports = (hcs1 >> 24) & 0xFF;
-
-
-    uart_puts("[USB] Slots = ");
-    print_hex(slots);
-
-    uart_puts("  Ports = ");
-    print_hex(ports);
-
-    uart_puts("\n");
-
-
-    /* --------------------------------
-       4. Claim Ownership
-       -------------------------------- */
-
+    // 3. Perform the BIOS-OS Handshake
     xhci_claim_ownership(cap);
 
+    // 4. Locate Operational Registers (Offset by cap_length)
+    struct xhci_op_regs *op = (struct xhci_op_regs *)((uint8_t*)cap + cap->cap_length);
 
-    /* --------------------------------
-       5. Reset Controller
-       -------------------------------- */
+    uart_puts("[INFO] USB: Resetting Host Controller...\r\n");
 
-    struct xhci_op_regs *op =
-        (struct xhci_op_regs *)
-        ((uint8_t*)cap + cap->cap_length);
+    // 5. Reset Sequence: Stop -> Reset -> Wait
+    op->usb_cmd &= ~1; // Stop bit (RS = 0)
+    
+    // Tiny delay to allow the stop to propagate
+    for(volatile int i=0; i<10000; i++) asm volatile("nop");
 
+    op->usb_cmd |= (1 << 1); // HCRST (Host Controller Reset)
 
-    uart_puts("[USB] Resetting controller...\n");
+    // Wait for the hardware to clear the reset bit
+    while (op->usb_cmd & (1 << 1)) {
+        asm volatile("nop");
+    }
 
-    /* Stop controller */
-    op->usb_cmd &= ~1;
+    // Wait for the controller to signal it is no longer halted
+    while (op->usb_sts & 1) {
+        asm volatile("nop");
+    }
 
-    delay(100000);
-
-
-    /* Issue reset */
-    op->usb_cmd |= USBCMD_HCRST;
-
-    while (op->usb_cmd & USBCMD_HCRST);
-
-
-    /* Wait until not halted */
-    while (op->usb_sts & 1);
-
-
-    uart_puts("[OK] USB: xHCI Ready\n");
-
-
-    return 0;
+    uart_puts("[OK] USB: xHCI Host Controller is READY.\r\n");
 }

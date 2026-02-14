@@ -93,7 +93,7 @@ run: all
 	@echo "Launching Aether OS ($(BOARD) Mode) in QEMU..."
 	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) \
 	-serial stdio \
-	-device virtio-net-pci,bus=pcie.0 \
+	-device virtio-net-pci,bus=pcie.0,disable-legacy=on,disable-modern=off \
 	-kernel kernel8.img
 
 debug: all
