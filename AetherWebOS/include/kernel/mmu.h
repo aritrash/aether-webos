@@ -28,7 +28,7 @@
 // --- Flag Combinations (Protection Attributes) ---
 
 // L2 Block Mappings (2MB) - Used for RAM and high-level peripheral ranges
-#define PROT_NORMAL            (MM_TYPE_BLOCK | MM_ATTR_NORMAL_INDEX | MM_ACCESS_FLAG | MM_SHARED)
+#define PROT_NORMAL            (MM_TYPE_BLOCK | (MT_NORMAL_WB << 2) | MM_ACCESS_FLAG | MM_SHARED)
 #define PROT_DEVICE            (MM_TYPE_BLOCK | MM_ATTR_DEVICE_INDEX | MM_ACCESS_FLAG)
 #define PROT_NORMAL_CACHED     (MM_TYPE_BLOCK | MM_ATTR_CACHED_INDEX | MM_ACCESS_FLAG | MM_SHARED)
 
@@ -37,12 +37,12 @@
 #define PROT_NORMAL_PAGE       (MM_TYPE_PAGE  | MM_ATTR_NORMAL_INDEX | MM_ACCESS_FLAG | MM_SHARED)
 
 // --- Function Prototypes ---
-void mmu_init(void);
+extern void mmu_init();
 
 /**
  * Maps a virtual memory region to a physical memory region.
  * Handles L3 page table entry population.
  */
-void mmu_map_region(uint64_t va, uint64_t pa, size_t size, uint64_t flags);
+extern void mmu_map_region(uintptr_t va, uintptr_t pa, size_t size, uint64_t flags);
 
 #endif

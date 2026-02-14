@@ -3,119 +3,89 @@
 #include "uart.h"
 #include "common/utils.h"
 
-/* * Note: PAGE_SIZE and PAGE_MASK are expected to be defined in 
- * kernel/memory.h or mmu.h to avoid redefinition warnings.
+/* * Aether OS v0.1.2 :: Memory Management Subsystem
+ * Logic by Roheet & Adrija
  */
+
 #define PAGE_MASK (~(PAGE_SIZE - 1))
 
-/* Bump pointers for our two memory zones */
+// Static pointers for Heap (kmalloc) and vmalloc (ioremap)
 static uint64_t heap_ptr = HEAP_START;
-
-/* * MUST match the L1 index used in mmu.init() 
- * 0x80000000 corresponds to L1 Index 2.
- */
 static uint64_t vmalloc_ptr = 0x80000000; 
 
-/**
- * kmalloc_init
- */
+// Limits based on mmu.c L3 expansion (4 tables = 8MB)
+#define VMALLOC_START 0x80000000
+#define VMALLOC_MAX   (VMALLOC_START + (4 * 2 * 1024 * 1024))
+
 void kmalloc_init() {
-    uart_puts("[OK] Memory Subsystem: Online (Heap @ ");
-    uart_put_hex(HEAP_START);
-    uart_puts(", vmalloc @ 0x80000000).\r\n");
+    uart_puts("[OK] Memory Subsystem: Online (Expanded L3 Support Active).\r\n");
 }
 
 /**
- * Standard Physical RAM Allocator (Bump Allocator)
- * Used for kernel structures and virtio rings.
+ * Standard Heap Allocator
+ * Used for kernel structures (vdev, structures, etc.)
  */
 void* kmalloc(size_t size) {
-    // 8-byte alignment for AArch64 performance and bus requirements
+    // 8-byte alignment
     size = (size + 7) & ~7;
 
     if (heap_ptr + size > HEAP_START + HEAP_SIZE) {
-        uart_puts("[ERROR] KERNEL PANIC: Physical Heap Exhaustion!\r\n");
+        uart_puts("[ERROR] kmalloc: Kernel Heap Exhausted!\r\n");
         return NULL;
     }
 
     void* ptr = (void*)heap_ptr;
     heap_ptr += size;
-
     return ptr;
 }
 
 /**
- * vmalloc: Reserves virtual space for device mappings.
- * These addresses do not point to physical RAM until mmu_map_region is called.
+ * Virtual Memory Allocator
+ * reserves address space in the 0x80000000 range for MMIO
  */
 void* vmalloc(size_t size) {
-    // Round request up to the nearest page
+    // Always align allocation to page boundaries
     size = (size + PAGE_SIZE - 1) & PAGE_MASK;
     
-    // Check for overflow of the 1GB dynamic segment (up to 0xBFFFFFFF)
-    if (vmalloc_ptr + size > 0xBFFFFFFF) {
-        uart_puts("[ERROR] KERNEL PANIC: vmalloc Virtual Space Exhaustion!\r\n");
+    if (vmalloc_ptr + size > VMALLOC_MAX) {
+        uart_puts("[ERROR] vmalloc: Out of virtual dynamic space (Pool exhausted)!\r\n");
         return NULL;
     }
 
     void* ptr = (void*)vmalloc_ptr;
     vmalloc_ptr += size;
-    
     return ptr;
 }
 
 /**
- * virt_to_phys: Converts a kernel virtual address to a physical address.
- * Because Aether OS uses an Identity Map for the RAM segment (0x40000000+),
- * the VA is currently equal to the PA.
- */
-uint64_t virt_to_phys(void *vaddr) {
-    uintptr_t addr = (uintptr_t)vaddr;
-
-    /* * SAFETY CHECK:
-     * Hardware (VirtIO/USB) needs pointers to actual Physical RAM.
-     * Addresses in the 0x80000000 range are VIRTUAL ONLY (vmalloc).
-     */
-    if (addr >= 0x80000000) {
-        uart_puts("[ERROR] MEM: Attempted virt_to_phys on vmalloc address (");
-        uart_put_hex(addr);
-        uart_puts("). This will cause Hardware Faults!\r\n");
-        return 0; 
-    }
-
-    return (uint64_t)addr;
-}
-
-/**
- * Adrija's ioremap: The definitive version with L3 support.
- * Maps hardware MMIO ranges into the Aether OS virtual address space.
+ * ioremap: Maps physical hardware registers to virtual space.
+ * * NOTE: This function handles the "Alignment Trap." Even if the 
+ * phys_addr is not page-aligned, we map the page containing it 
+ * and return the pointer with the correct internal offset.
  */
 void* ioremap(uint64_t phys_addr, size_t size) {
     if (size == 0) return NULL;
 
-    /* Align physical base down to 4KB page boundary */
+    // 1. Calculate the start of the physical page (4KB boundary)
     uint64_t phys_page = phys_addr & PAGE_MASK;
 
-    /* Offset inside that first 4KB page */
-    uint64_t offset = phys_addr & ~PAGE_MASK;
+    // 2. Calculate the offset within that page (e.g., if addr is 0x...1002, offset is 2)
+    uint64_t offset = phys_addr & (PAGE_SIZE - 1);
 
-    /* Round total size up to cover all required pages */
+    // 3. Calculate mapping size (must cover the offset + the requested size)
     size_t map_size = (offset + size + PAGE_SIZE - 1) & PAGE_MASK;
 
-    /* Request virtual address space in the 0x80000000+ range */
-    void *virt = vmalloc(map_size);
-    if (!virt) return NULL;
+    // 4. Reserve virtual space in the dynamic range
+    void *virt_page = vmalloc(map_size);
+    if (!virt_page) {
+        return NULL;
+    }
 
-    /* * Map the pages into the L3 tables with Device attributes.
-     * PROT_DEVICE_PAGE ensures nGnRnE (No gathering, No reordering, No early write-ack).
-     */
-    mmu_map_region(
-        (uintptr_t)virt,
-        phys_page,
-        map_size,
-        PROT_DEVICE_PAGE
-    );
+    // 5. Commit the mapping to the MMU Level 3 tables
+    // Flags: PROT_DEVICE_PAGE (nGnRnE) + Access Flag
+    mmu_map_region((uintptr_t)virt_page, phys_page, map_size, PROT_DEVICE_PAGE);
 
-    /* Return the virtual pointer adjusted by the original physical offset */
-    return (void *)((uintptr_t)virt + offset);
+    // 6. Return the virtual address adjusted by the original offset
+    // If virt_page is 0x80001000 and offset is 2, returns 0x80001002
+    return (void *)((uintptr_t)virt_page + offset);
 }

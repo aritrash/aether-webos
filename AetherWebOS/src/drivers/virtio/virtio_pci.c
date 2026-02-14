@@ -2,25 +2,25 @@
 #include "drivers/virtio/virtio_net.h"
 #include "drivers/pcie.h"
 #include "kernel/memory.h"
+#include "common/io.h"
 #include "uart.h"
 #include "utils.h"
 
 /**
  * INTERNAL HELPER: virtio_pci_map_capability
- * Maps physical BAR offsets to virtual addresses using Adrija's ioremap.
  */
 static void virtio_pci_map_capability(struct virtio_pci_device *vdev, 
-                                     uint8_t type, uint8_t bar, uint32_t offset, uint8_t cap_ptr) 
+                                     uint8_t type, uint8_t bar, uint32_t offset, 
+                                     uint32_t length, uint8_t cap_ptr) 
 {
-    // Read the base address from the specific BAR
+    // Read BAR from PCI config space (BARs start at 0x10)
     uint32_t bar_val = pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x10 + (bar * 4));
     
-    // BARs can be 64-bit, but for QEMU/RPi4 VirtIO, we usually deal with 32-bit BARs.
-    // We mask the lower bits (flags) to get the physical base address.
+    // Physical address is the BAR value minus the low-order flag bits
     uint64_t phys_addr = (uint64_t)(bar_val & ~0xF);
 
-    // Map a standard 4KB page via Adrija's L3 ioremap
-    void* virt_addr = ioremap(phys_addr + offset, 4096);
+    // Map the region using our new expanded L3 ioremap
+    void* virt_addr = ioremap(phys_addr + offset, length);
 
     switch (type) {
         case VIRTIO_PCI_CAP_COMMON_CFG:
@@ -37,70 +37,71 @@ static void virtio_pci_map_capability(struct virtio_pci_device *vdev,
 
         case VIRTIO_PCI_CAP_NOTIFY_CFG:
             vdev->notify_base = (volatile uint8_t *)virt_addr;
-            // The notification multiplier is located at cap_ptr + 16 (4th dword of the cap)
+            // Read the multiplier (located at cap_ptr + 16 in the capability struct)
             vdev->notify_off_multiplier = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 16);
             break;
     }
 }
 
 /**
- * ROHEET'S LOGIC: virtio_pci_cap_lookup
- * Walks the PCI capability list (starting at offset 0x34) to find VirtIO blocks.
+ * virtio_pci_cap_lookup: The "Aligned" Walker
  */
 void virtio_pci_cap_lookup(struct virtio_pci_device *vdev) {
-    // 0x34 is the offset for the Capability Pointer in the PCI Header
-    uint8_t cap_ptr = pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x34) & 0xFF;
+    // Read 16-bit Status (Offset 0x06). pcie_read_config handles the alignment/shift.
+    uint16_t status = (uint16_t)pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x06);
 
-    uart_puts("[DEBUG] VirtIO: Starting Cap Walk at offset: ");
+    uart_puts("[DEBUG] VirtIO: PCI Status: ");
+    uart_put_hex(status);
+    uart_puts("\r\n");
+
+    if (!(status & 0x0010)) {
+        uart_puts("[ERROR] VirtIO: Device reports no capabilities list.\r\n");
+        return;
+    }
+
+    // Read Capability Pointer at 0x34
+    uint8_t cap_ptr = (uint8_t)(pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x34) & 0xFF);
+
+    uart_puts("[DEBUG] VirtIO: Starting Cap Walk at: ");
     uart_put_hex(cap_ptr);
     uart_puts("\r\n");
 
     while (cap_ptr != 0 && cap_ptr < 0xFF) {
         uint32_t header = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr);
-        uint8_t cap_id = header & 0xFF;
-        uint8_t next   = (header >> 8) & 0xFF;
-        uint8_t len    = (header >> 16) & 0xFF;
+        uint8_t cap_id = (uint8_t)(header & 0xFF);
+        uint8_t next   = (uint8_t)((header >> 8) & 0xFF);
 
-        if (cap_id == 0x09) { // Vendor Specific Capability
+        if (cap_id == 0x09) { // Vendor Specific (VirtIO)
+            // Extract cfg_type (byte 3) and bar (byte 4) from the cap structure
             uint32_t type_data = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 3);
-            uint8_t cfg_type = type_data & 0xFF;
-            uint8_t bar      = (type_data >> 8) & 0xFF;
+            uint8_t cfg_type = (uint8_t)(type_data & 0xFF);
+            uint8_t bar      = (uint8_t)((type_data >> 8) & 0xFF);
             
-            uint32_t offset = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 8);
-            uint32_t length = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 12);
+            uint32_t offset  = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 8);
+            uint32_t length  = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 12);
 
             uart_puts("  -> Found VirtIO Cap Type: ");
             uart_put_int(cfg_type);
-            uart_puts(" at BAR ");
-            uart_put_int(bar);
             uart_puts("\r\n");
 
-            // Perform the mapping via Adrija's ioremap
-            virtio_pci_map_capability(vdev, cfg_type, bar, offset, cap_ptr);
+            virtio_pci_map_capability(vdev, cfg_type, bar, offset, length, cap_ptr);
         }
-
-        cap_ptr = next; // Move to the next capability in the linked list
+        cap_ptr = next;
     }
 }
 
-/**
- * MAIN ENTRY: virtio_pci_init
- * Called by pcie.c when a VirtIO Vendor/Device ID match is found.
- */
 void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func) {
     uart_puts("[INFO] VirtIO: Initializing PCI Transport...\r\n");
 
     struct virtio_pci_device *vdev = kmalloc(sizeof(struct virtio_pci_device));
     if (!vdev) {
-        uart_puts("[ERROR] VirtIO: Failed to allocate device structure.\r\n");
+        uart_puts("[ERROR] VirtIO: kmalloc failed.\r\n");
         return;
     }
 
     vdev->bus = bus;
     vdev->dev = dev;
     vdev->func = func;
-    
-    // Initialize pointers to NULL before scanning
     vdev->common = NULL;
     vdev->device = NULL;
     vdev->isr = NULL;
@@ -108,11 +109,10 @@ void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func) {
 
     virtio_pci_cap_lookup(vdev);
 
-    // Verify that the critical structures were found and mapped
     if (vdev->common && vdev->device) {
-        uart_puts("[OK] VirtIO: Caps mapped. Passing to Network Driver.\r\n");
+        uart_puts("[OK] VirtIO: Transport Layer Ready. Calling Net Init.\r\n");
         virtio_net_init(vdev);
     } else {
-        uart_puts("[ERROR] VirtIO: Missing essential capabilities (Common/Device).\r\n");
+        uart_puts("[ERROR] VirtIO: Handshake failed (Missing Caps).\r\n");
     }
 }

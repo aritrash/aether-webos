@@ -35,5 +35,6 @@ struct pci_driver {
 void pcie_init(void);
 void pcie_probe_device(uint32_t bus, uint32_t dev, uint32_t func);
 uint32_t pcie_read_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg);
+void pcie_dump_header(uint32_t bus, uint32_t dev, uint32_t func);
 
 #endif

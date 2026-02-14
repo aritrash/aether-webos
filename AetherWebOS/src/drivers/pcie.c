@@ -5,138 +5,145 @@
 #include "drivers/virtio/virtio_pci.h"
 #include "drivers/virtio/virtio_net.h"
 #include "drivers/usb/xhci.h"
+#include "common/io.h"
 #include <stddef.h>
 
-/**
- * The Driver Registry Table.
- * Drivers are matched by Vendor/Device ID or Generic Class Code.
+/* * Revised Driver Registry:
+ * Wildcard 0 means "Match anything for this field".
+ * Class Code 0x0C0330 is the industry standard for xHCI USB 3.0.
  */
 static struct pci_driver driver_registry[] = {
-    // Vendor, Device, Class, Init Function, Name
-    {0x1AF4, 0xFFFF, 0xFFFFFF, virtio_pci_init, "VirtIO Controller"},
-    {0xFFFF, 0xFFFF, 0x0C0330, xhci_init,       "Generic xHCI USB 3.0"},
-    {0x1B36, 0xFFFF, 0xFFFFFF, NULL,            "QEMU PCI Bridge"},
-    {0, 0, 0, NULL, NULL} // Sentinel
+    {0x1AF4, 0xFFFF, 0x0,      virtio_pci_init, "VirtIO Controller"},
+    {0x0,    0x0,    0x0C0330, xhci_init,       "Generic xHCI USB 3.0"},
+    {0x1B36, 0xFFFF, 0x0,      NULL,            "QEMU PCI Bridge"},
+    {0, 0, 0, NULL, NULL}
 };
 
 /**
- * pcie_read_config: Accesses the ECAM (Enhanced Configuration Access Mechanism).
- * Calculated as: base + (bus << 20) | (dev << 15) | (func << 12) | reg
+ * pcie_read_config: Calculates the ECAM address and performs a safe MMIO read.
  */
 uint32_t pcie_read_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg) {
-    uint64_t address = PCIE_EXT_CFG_DATA | (bus << 20) | (dev << 15) | (func << 12) | (reg & ~3);
+    // 1. Precise ECAM Address calculation
+    uint64_t offset = ((bus & 0xFF) << 20) | 
+                      ((dev & 0x1F) << 15) | 
+                      ((func & 0x07) << 12) | 
+                      (reg & 0xFFF);
+                      
+    uint64_t address = PCIE_EXT_CFG_DATA + offset;
     
-    // Memory Barrier to ensure order
-    asm volatile("dsb sy"); 
-    
-    uint32_t val = *(volatile uint32_t*)address;
-    
-    asm volatile("dsb sy");
-    return val;
+    // 2. Perform aligned read via our safe MMIO helper
+    uintptr_t aligned_addr = (uintptr_t)address & ~0x3;
+    uint32_t val = mmio_read32(aligned_addr);
+
+    // 3. Handle sub-dword shifting
+    uint32_t shift = (reg & 0x3) * 8;
+    uint32_t result = (val >> shift);
+
+    // Filter 16-bit registers (Vendor, Device, Command, Status)
+    if (reg < 0x08) {
+        return result & 0xFFFF;
+    }
+
+    return result;
 }
 
-/**
- * pcie_write_config: Essential for writing to BARs and Command registers.
- */
 void pcie_write_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg, uint32_t val) {
-    uint64_t address = PCIE_EXT_CFG_DATA | (bus << 20) | (dev << 15) | (func << 12) | (reg & ~3);
-    
-    asm volatile("dsb sy");
-    *(volatile uint32_t*)address = val;
-    asm volatile("dsb sy");
+    uint64_t offset = ((bus & 0xFF) << 20) | 
+                      ((dev & 0x1F) << 15) | 
+                      ((func & 0x07) << 12) | 
+                      (reg & 0xFFF);
+    mmio_write32(PCIE_EXT_CFG_DATA + offset, val);
 }
 
-/**
- * pcie_probe_device: Matches hardware against our software driver registry.
- */
+void pcie_dump_header(uint32_t bus, uint32_t dev, uint32_t func) {
+    uart_puts("\r\n--- [DEBUG] PCI Header: 00:");
+    uart_put_int(dev);
+    uart_puts(".");
+    uart_put_int(func);
+    uart_puts(" ---\r\n");
+
+    for (uint32_t reg = 0; reg < 64; reg += 16) {
+        uart_put_hex(reg);
+        uart_puts(": ");
+        for (uint32_t i = 0; i < 16; i += 4) {
+            uart_put_hex(pcie_read_config(bus, dev, func, reg + i));
+            uart_puts(" ");
+        }
+        uart_puts("\r\n");
+    }
+}
+
 void pcie_probe_device(uint32_t bus, uint32_t dev, uint32_t func) {
-    uint32_t id = pcie_read_config(bus, dev, func, 0);
-    uint16_t vendor = id & 0xFFFF;
-    uint16_t device = (id >> 16) & 0xFFFF;
+    uint16_t vendor = (uint16_t)pcie_read_config(bus, dev, func, 0x00);
+    uint16_t device = (uint16_t)pcie_read_config(bus, dev, func, 0x02);
     
-    // Offset 0x08 contains Class Code (24-bit)
     uint32_t class_reg = pcie_read_config(bus, dev, func, 0x08);
     uint32_t class_code = (class_reg >> 8) & 0xFFFFFF;
 
-    for (int i = 0; driver_registry[i].vendor_id != 0; i++) {
+    for (int i = 0; driver_registry[i].name != NULL; i++) {
         struct pci_driver *drv = &driver_registry[i];
-        
-        // Match 1: Vendor + Device ID
-        if (vendor == drv->vendor_id && (drv->device_id == 0xFFFF || device == drv->device_id)) {
-            uart_puts(" -> Matching Driver: ");
-            uart_puts(drv->name);
-            uart_puts("\r\n");
+        int match = 0;
 
-            if (drv->init) drv->init(bus, dev, func);
-            return;
+        // Logic: Match by explicit ID or Match by Class Code
+        if (drv->vendor_id != 0 && vendor == drv->vendor_id) {
+            if (drv->device_id == 0xFFFF || device == drv->device_id) match = 1;
+        } else if (drv->class_code != 0 && class_code == drv->class_code) {
+            match = 1;
         }
-        
-        // Match 2: Generic Class Code (e.g., any USB xHCI controller)
-        if (drv->class_code != 0xFFFFFF && class_code == drv->class_code) {
-            uart_puts(" -> Matching Class Driver: ");
-            uart_puts(drv->name);
-            uart_puts("\r\n");
 
+        if (match) {
+            // CRITICAL: Enable Memory Space (bit 1) and Bus Master (bit 2)
+            uint16_t command = (uint16_t)pcie_read_config(bus, dev, func, 0x04);
+            pcie_write_config(bus, dev, func, 0x04, command | 0x06);
+            
+            uart_puts("    -> Matching Driver: ");
+            uart_puts(drv->name);
+            uart_puts(" [Handshake Ready]\r\n");
+            
             if (drv->init) drv->init(bus, dev, func);
             return;
         }
     }
-    
-    uart_puts(" -> No specialized driver found.\r\n");
 }
 
-/**
- * pcie_init: The entry point for Aether OS hardware discovery.
- */
 void pcie_init() {
     uart_puts("\r\n[INFO] PCIe: Initializing Aether OS PCIe Subsystem...\r\n");
-
-#ifdef BOARD_VIRT
-    uart_puts("[DEBUG] Platform: QEMU VIRT (ECAM @ 0x70000000)\r\n");
-#else
-    // RPi4 Hardware Wakeup Logic
-    uart_puts("[DEBUG] Platform: RPi4 BCM2711\r\n");
-    volatile uint32_t* rgr1_sw_init = (volatile uint32_t*)(PCIE_REG_BASE + 0x9210);
-    *rgr1_sw_init |= (1 << 0);
-    for(volatile int i = 0; i < 500000; i++); 
-#endif
-
-    uart_puts("[INFO] PCIe: Scanning Bus 0...\r\n");
+    uart_puts("[INFO] PCIe: Scanning Bus 0 (ECAM: ");
+    uart_put_hex(PCIE_EXT_CFG_DATA);
+    uart_puts(")...\r\n");
     
     int found_count = 0;
+
     for (uint32_t dev = 0; dev < 32; dev++) {
+        // Heartbeat dot every 8 devices
+        if (dev % 8 == 0) uart_puts("."); 
+
         for (uint32_t func = 0; func < 8; func++) {
-            uint32_t id = pcie_read_config(0, dev, func, 0);
+            uint32_t vendor = pcie_read_config(0, dev, func, 0x00);
             
-            // Skip non-existent devices (0xFFFF or 0x0000)
-            if (id == 0xFFFFFFFF || id == 0x00000000) {
+            // 0xFFFF = No device. Skip immediately to stop ghost matching.
+            if (vendor == 0xFFFF || vendor == 0x0000) {
                 if (func == 0) break; 
                 continue;
             }
 
             found_count++;
-            uart_puts("  + Found 00:");
+            uart_puts("\r\n  + Device Found at 00:");
             uart_put_int(dev);
             uart_puts(".");
             uart_put_int(func);
             uart_puts(" [ID: ");
-            uart_put_hex(id);
+            uart_put_hex(vendor);
             uart_puts("]");
 
+            pcie_dump_header(0, dev, func);
             pcie_probe_device(0, dev, func);
-
-            // Multi-Function Check: Byte 2 of offset 0x0C contains Header Type
-            // If bit 7 is set, the device has multiple functions.
-            if (func == 0) {
-                uint32_t header_type = (pcie_read_config(0, dev, 0, 0x0C) >> 16) & 0xFF;
-                if (!(header_type & 0x80)) break; 
-            }
         }
     }
-
+    
     if (found_count == 0) {
-        uart_puts("[WARN] PCIe: No devices found on Bus 0.\r\n");
+        uart_puts("\r\n[WARN] PCIe: No physical devices found. Verify config.h offsets.");
     } else {
-        uart_puts("[OK] PCIe: Discovery complete.\r\n");
+        uart_puts("\r\n[OK] PCIe Enumeration Complete.\r\n");
     }
 }

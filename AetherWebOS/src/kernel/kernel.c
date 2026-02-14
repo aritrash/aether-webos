@@ -46,7 +46,7 @@ void kernel_main() {
     // 4. Device Discovery & Drivers
     // Now pcie_init can safely call kmalloc and ioremap
     pcie_init();
-    uart_puts("[OK] PCIe Enumeration & Driver Handshakes Complete.\r\n");
+    uart_puts("\r\n[OK] PCIe Enumeration & Driver Handshakes Complete.\r\n");
 
     // 5. Interrupts & System Services
     gic_init();
