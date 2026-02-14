@@ -11,5 +11,6 @@
 void kmalloc_init(void);
 void* kmalloc(size_t size);
 void kfree(void* ptr);
+void* ioremap(uint64_t phys_addr, size_t size);
 
 #endif

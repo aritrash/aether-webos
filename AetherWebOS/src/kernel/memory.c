@@ -1,6 +1,6 @@
-#include "include/kernel/memory.h"
-#include "include/drivers/uart.h"
-#include "include/common/utils.h"
+#include "kernel/memory.h"
+#include "uart.h"
+#include "utils.h"
 
 static uint64_t heap_ptr = HEAP_START;
 
@@ -28,4 +28,11 @@ void* kmalloc(size_t size) {
 void kfree(void* ptr) {
     // In a bump allocator, free does nothing.
     // We will upgrade this to a Buddy/Slab allocator once the drivers are up.
+}
+
+// Temporary fix for Adrija's delay
+void* ioremap(uint64_t phys_addr, size_t size) {
+    // For now, return the address as-is. 
+    // This only works if your MMU.c maps 0x08000000 - 0x3FFFFFFF as Identity.
+    return (void*)phys_addr;
 }

@@ -2,21 +2,38 @@
 #define PCIE_H
 
 #include <stdint.h>
-#include "config.h" // Crucial: Pulls BOARD-specific addresses
+#include "config.h"
 
-/* * PCIE_REG_BASE and PCIE_EXT_CFG_DATA are now defined in config.h 
- * to support both RPi4 and QEMU Virt.
- */
+/* --- PCI Class Codes --- */
+#define PCI_CLASS_MASS_STORAGE    0x01
+#define PCI_CLASS_NETWORK         0x02
+#define PCI_CLASS_DISPLAY         0x03
+#define PCI_CLASS_BRIDGE          0x06
+#define PCI_CLASS_SERIAL_BUS      0x0C
+#define PCI_SUBCLASS_USB          0x03
+#define PCI_IF_XHCI               0x30
 
-// PCIe Register Offsets
+/* --- Registry Definitions --- */
+
+// Function pointer for driver initialization
+typedef void (*pci_init_fn)(uint32_t bus, uint32_t dev, uint32_t func);
+
+struct pci_driver {
+    uint16_t vendor_id;
+    uint16_t device_id;
+    uint32_t class_code; // Format: (Class << 16 | Subclass << 8 | Interface)
+    pci_init_fn init;
+    const char *name;
+};
+
+/* --- Existing Peripheral Mappings --- */
 #define PCIE_RC_REVISION     ((volatile uint32_t*)(PCIE_REG_BASE + 0x406c))
-#define PCIE_STATUS          ((volatile uint32_t*)(PCIE_REG_BASE + 0x4068))
-#define PCIE_INTR2_CPU_MASK  ((volatile uint32_t*)(PCIE_REG_BASE + 0x4310))
+#define PCIE_STATUS           ((volatile uint32_t*)(PCIE_REG_BASE + 0x4068))
+#define PCIE_INTR2_CPU_MASK   ((volatile uint32_t*)(PCIE_REG_BASE + 0x4310))
 
-// Configuration Space (ECAM) 
-// On RPi4, this remains 0x600000000. On Virt, this is 0x40000000.
-// Defined in config.h
+/* --- Function Prototypes --- */
 void pcie_init(void);
+void pcie_probe_device(uint32_t bus, uint32_t dev, uint32_t func);
 uint32_t pcie_read_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg);
 
 #endif

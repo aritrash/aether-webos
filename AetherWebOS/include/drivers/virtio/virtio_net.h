@@ -93,4 +93,8 @@ struct virtq_desc {
     uint16_t next;
 } __attribute__((packed));
 
+struct virtio_pci_device;
+void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func);
+void virtio_net_init(struct virtio_pci_device *vdev);
+
 #endif
