@@ -3,13 +3,12 @@
 
 #include <stdint.h>
 #include <stddef.h>
-
-#define PAGE_SIZE 4096
-#define HEAP_START 0x1000000 // Start at 16MB to stay well clear of kernel code
-#define HEAP_SIZE  0x1000000 // 16MB of heap for now
+#include "config.h" // Pull HEAP constants from here
 
 void kmalloc_init(void);
 void* kmalloc(size_t size);
 void kfree(void* ptr);
+void* vmalloc(size_t size);
+void* ioremap(uint64_t phys_addr, size_t size);
 
 #endif

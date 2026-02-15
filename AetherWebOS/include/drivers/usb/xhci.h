@@ -36,4 +36,6 @@ struct xhci_op_regs {
     uint32_t config;           // Max Device Slots Enabled
 } __attribute__((packed));
 
+void xhci_init(uint32_t bus, uint32_t dev, uint32_t func);
+
 #endif

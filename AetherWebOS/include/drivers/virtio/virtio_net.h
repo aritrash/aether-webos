@@ -2,11 +2,16 @@
 #define VIRTIO_NET_H
 
 #include <stdint.h>
+/* * We include the ring structures here so that virtio_net_config 
+ * and our init functions can reference virtqueue related logic 
+ * without redefinition errors.
+ */
+#include "drivers/virtio/virtio_ring.h"
 
 /* --- VIRTIO PCI VENDOR/DEVICE IDS --- */
-#define VIRTIO_VENDOR_ID          0x1AF4
-#define VIRTIO_NET_DEVICE_ID      0x1000 // Transitional
-#define VIRTIO_NET_MODERN_ID      0x1041 // Modern (VirtIO 1.0+)
+#define VIRTIO_VENDOR_ID           0x1AF4
+#define VIRTIO_NET_DEVICE_ID       0x1000 // Transitional
+#define VIRTIO_NET_MODERN_ID       0x1041 // Modern (VirtIO 1.0+)
 
 /* --- VIRTIO PCI CAPABILITY TYPES --- */
 #define VIRTIO_PCI_CAP_COMMON_CFG  1
@@ -23,10 +28,10 @@
 #define VIRTIO_STATUS_FAILED       128
 
 /* --- VIRTIO NET FEATURE BITS --- */
-#define VIRTIO_NET_F_CSUM          (1ULL << 0)
-#define VIRTIO_NET_F_MAC           (1ULL << 5)
-#define VIRTIO_NET_F_STATUS        (1ULL << 16)
-#define VIRTIO_NET_F_MTU           (1ULL << 19)
+#define VIRTIO_NET_F_CSUM           (1ULL << 0)
+#define VIRTIO_NET_F_MAC            (1ULL << 5)
+#define VIRTIO_NET_F_STATUS         (1ULL << 16)
+#define VIRTIO_NET_F_MTU            (1ULL << 19)
 
 /**
  * 1. PCI Capability Structure
@@ -79,18 +84,11 @@ struct virtio_net_config {
     uint16_t mtu;
 } __attribute__((packed));
 
-/**
- * 4. VirtIO Ring Descriptor
- * The "Envelope" used for DMA transfers.
- */
-struct virtq_desc {
-    uint64_t addr;
-    uint32_t len;
-    uint16_t flags;
-#define VIRTQ_DESC_F_NEXT     1
-#define VIRTQ_DESC_F_WRITE    2
-#define VIRTQ_DESC_F_INDIRECT 4
-    uint16_t next;
-} __attribute__((packed));
+/* Forward declaration for the master device struct */
+struct virtio_pci_device;
+
+/* --- Function Prototypes --- */
+void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func);
+void virtio_net_init(struct virtio_pci_device *vdev);
 
 #endif

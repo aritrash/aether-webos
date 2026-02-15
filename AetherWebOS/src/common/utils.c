@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "uart.h"
+#include <stddef.h>
 
 void uart_put_hex(uint64_t d) {
     char n;
@@ -24,4 +25,12 @@ void uart_put_int(uint64_t n) {
         n /= 10;
     }
     while (--i >= 0) uart_putc(buf[i]);
+}
+
+void* memset(void* s, int c, size_t n) {
+    volatile unsigned char* p = (volatile unsigned char*)s;
+    while (n--) {
+        *p++ = (unsigned char)c;
+    }
+    return s;
 }
