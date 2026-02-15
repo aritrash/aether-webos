@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "gic.h"
 #include "config.h"
+#include "timer.h"
 
 typedef struct {
     uint64_t x[31]; 
@@ -58,25 +59,23 @@ void handle_irq_exception(uint64_t esr, uint64_t elr, uint64_t far, trap_frame_t
 #ifdef BOARD_RPI4
     iar = GICC_IAR;
 #else
-    // GICv3: Acknowledge the interrupt
+    // GICv3 Acknowledge
     asm volatile("mrs %0, ICC_IAR1_EL1" : "=r" (iar));
+    asm volatile("isb"); // Ensure the read is synchronized
 #endif
 
     uint32_t irq_id = iar & 0x3FF;
 
     if (irq_id == TIMER_IRQ_ID) {
-        uart_puts("."); // Heartbeat!
-        
-        uint64_t freq;
-        asm volatile ("mrs %0, cntfrq_el0" : "=r" (freq));
-        // Reset timer for next 1 second interval
-        asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq));
-    }
+        handle_timer_irq();
+    } 
+    // ... rest of logic ...
 
 #ifdef BOARD_RPI4
     GICC_EOIR = iar;
 #else
-    // GICv3: End of Interrupt
+    // GICv3 End of Interrupt
     asm volatile("msr ICC_EOIR1_EL1, %0" : : "r" (iar));
+    asm volatile("isb");
 #endif
 }

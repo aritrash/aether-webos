@@ -1,6 +1,9 @@
 #include "utils.h"
 #include "timer.h"
 
+static uint64_t _timer_freq;
+static volatile uint64_t _uptime_ms = 0;
+
 static uint64_t get_timer_freq() {
     uint64_t val;
     asm volatile ("mrs %0, cntfrq_el0" : "=r" (val));
@@ -8,16 +11,30 @@ static uint64_t get_timer_freq() {
 }
 
 void timer_init() {
-    uint64_t freq = get_timer_freq();
+    _timer_freq = get_timer_freq();
     
-    // Set timer to fire in 1 second
-    // It's often safer to use tval (Timer Value) for relative offsets
-    asm volatile ("msr cntp_tval_el0, %0" : : "r" (freq));
+    // Set for 10ms (Frequency / 100)
+    uint64_t interval = _timer_freq / 100;
+    asm volatile ("msr cntp_tval_el0, %0" : : "r" (interval));
 
-    /*
-     * Enable the timer (Bit 0) and UNMASK the interrupt (Bit 1 = 0)
-     * IMASK is Bit 1. If IMASK=1, the interrupt is masked.
-     * Setting to 1 means: Enable=1, IMASK=0, ISTRIATUS=0
-     */
+    // Enable=1, Unmask=0
     asm volatile ("msr cntp_ctl_el0, %0" : : "r" (1));
+}
+
+void handle_timer_irq() {
+    // 1. Increment global uptime
+    _uptime_ms += 10; 
+
+    // 2. RELOAD: If you miss this, the timer never fires again!
+    // Set for another 10ms (assuming 100Hz)
+    uint64_t frq;
+    asm volatile ("mrs %0, cntfrq_el0" : "=r" (frq));
+    asm volatile ("msr cntp_tval_el0, %0" : : "r" (frq / 100));
+
+    // 3. Debug: Add this to prove life
+    uart_putc('.'); 
+}
+
+uint64_t get_system_uptime_ms() {
+    return _uptime_ms;
 }

@@ -6,6 +6,12 @@
 #include "uart.h"
 #include "utils.h"
 
+/**
+ * THE LINKER FIX: Global reference definition.
+ * This satisfies the extern in virtio_pci.h and portal.c
+ */
+struct virtio_pci_device *global_vnet_dev = NULL;
+
 static void virtio_pci_map_capability(struct virtio_pci_device *vdev, 
                                       uint8_t type, uint8_t bar, uint32_t offset, 
                                       uint32_t length, uint8_t cap_ptr) 
@@ -13,13 +19,14 @@ static void virtio_pci_map_capability(struct virtio_pci_device *vdev,
     uint32_t bar_low = pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x10 + (bar * 4));
     uint64_t phys_addr = (uint64_t)(bar_low & ~0xF);
 
-    if ((bar_low & 0x6) == 0x4) { // 64-bit
+    if ((bar_low & 0x6) == 0x4) { // 64-bit BAR detected
         uint32_t bar_high = pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x10 + (bar * 4) + 4);
         phys_addr |= ((uint64_t)bar_high << 32);
     }
 
     if (phys_addr == 0) return;
 
+    // Use ioremap to map the hardware physical range into our virtual address space
     void* virt_addr = ioremap(phys_addr + offset, length);
     if (!virt_addr) return;
 
@@ -35,12 +42,14 @@ static void virtio_pci_map_capability(struct virtio_pci_device *vdev,
             break;
         case VIRTIO_PCI_CAP_NOTIFY_CFG:
             vdev->notify_base = (volatile uint8_t *)virt_addr;
+            // The notify multiplier is located 16 bytes into the capability structure
             vdev->notify_off_multiplier = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 16);
             break;
     }
 }
 
 void virtio_pci_cap_lookup(struct virtio_pci_device *vdev) {
+    // 0x34 is the PCI Capability Pointer register
     uint8_t cap_ptr = (uint8_t)(pcie_read_config(vdev->bus, vdev->dev, vdev->func, 0x34) & 0xFF);
 
     while (cap_ptr != 0 && cap_ptr < 0xFF) {
@@ -48,7 +57,7 @@ void virtio_pci_cap_lookup(struct virtio_pci_device *vdev) {
         uint8_t cap_id = d0 & 0xFF;
         uint8_t next = (d0 >> 8) & 0xFF;
 
-        if (cap_id == 0x09) { // Vendor Specific (VirtIO)
+        if (cap_id == 0x09) { // 0x09 = Vendor Specific Capability (VirtIO)
             uint8_t type = (d0 >> 24) & 0xFF; 
             uint32_t d1 = pcie_read_config(vdev->bus, vdev->dev, vdev->func, cap_ptr + 4);
             uint8_t bar = d1 & 0xFF;
@@ -68,15 +77,23 @@ void virtio_pci_cap_lookup(struct virtio_pci_device *vdev) {
 
 void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func) {
     uart_puts("[INFO] VirtIO: Initializing PCI Transport...\r\n");
+    
     struct virtio_pci_device *vdev = kmalloc(sizeof(struct virtio_pci_device));
-    if (!vdev) return;
+    if (!vdev) {
+        uart_puts("[ERROR] VirtIO: Out of memory for vdev allocation.\r\n");
+        return;
+    }
 
     vdev->bus = bus; vdev->dev = dev; vdev->func = func;
     vdev->common = NULL; vdev->device = NULL; vdev->isr = NULL; vdev->notify_base = NULL;
 
+    // Walk the capabilities to map Common, Notify, ISR, and Device regions
     virtio_pci_cap_lookup(vdev);
 
     if (vdev->common && vdev->device) {
+        // ASSIGNMENT: Bridge the live hardware to the Portal/WebUI
+        global_vnet_dev = vdev;
+        
         uart_puts("[OK] VirtIO: Mapping Successful.\r\n");
         virtio_net_init(vdev);
     } else {

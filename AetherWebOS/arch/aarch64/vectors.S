@@ -1,38 +1,44 @@
-// src/vectors.S
+/* src/vectors.S */
 .section ".vectors", "ax"
+
+// --- THE MISSING LINKER PIECE ---
+.global exceptions_init
+exceptions_init:
+    ldr x0, =exception_vector_table
+    msr vbar_el1, x0    // Set Vector Base Address Register
+    isb                 // Instruction Synchronization Barrier
+    ret
 
 .macro ventry label
     .align 7
     b \label
 .endm
 
-/* Vector table MUST be 2KB aligned */
 .align 11
 .global exception_vector_table
 exception_vector_table:
-    /* Current EL with SP0 (Should not happen in AETHER OS) */
-    ventry sync_invalid_el1t
-    ventry irq_invalid_el1t
-    ventry fiq_invalid_el1t
-    ventry error_invalid_el1t
+    /* Current EL with SP0 */
+    ventry invalid_exception_handler
+    ventry invalid_exception_handler
+    ventry invalid_exception_handler
+    ventry invalid_exception_handler
 
-    /* Current EL with SPx (This is where AETHER kernel exceptions land) */
+    /* Current EL with SPx */
     ventry sync_el1h
     ventry irq_el1h
-    ventry fiq_invalid_el1h
-    ventry error_invalid_el1h
+    ventry invalid_exception_handler
+    ventry invalid_exception_handler
 
-    /* Lower EL (AArch64/AArch32) */
-    ventry sync_invalid_el0_64
-    ventry irq_invalid_el0_64
-    ventry fiq_invalid_el0_64
-    ventry error_invalid_el0_64
-    ventry sync_invalid_el0_32
-    ventry irq_invalid_el0_32
-    ventry fiq_invalid_el0_32
-    ventry error_invalid_el0_32
+    /* Lower EL (AArch64) */
+    .rept 4
+    ventry invalid_exception_handler
+    .endr
 
-/* Context Saving Macro */
+    /* Lower EL (AArch32) */
+    .rept 4
+    ventry invalid_exception_handler
+    .endr
+
 .macro kernel_entry
     sub sp, sp, #256
     stp x0, x1, [sp, #16 * 0]
@@ -53,7 +59,6 @@ exception_vector_table:
     str x30, [sp, #16 * 15]
 .endm
 
-/* Context Restoration Macro */
 .macro kernel_exit
     ldr x30, [sp, #16 * 15]
     ldp x28, x29, [sp, #16 * 14]
@@ -61,7 +66,7 @@ exception_vector_table:
     ldp x24, x25, [sp, #16 * 12]
     ldp x22, x23, [sp, #16 * 11]
     ldp x20, x21, [sp, #16 * 10]
-    ldp x18, x19, [sp, #16 * 9]   // <--- FIXED: Was #16 * 11
+    ldp x18, x19, [sp, #16 * 9]
     ldp x16, x17, [sp, #16 * 8]
     ldp x14, x15, [sp, #16 * 7]
     ldp x12, x13, [sp, #16 * 6]
@@ -75,6 +80,7 @@ exception_vector_table:
     eret
 .endm
 
+.global sync_el1h
 sync_el1h:
     kernel_entry
     mrs x0, esr_el1
@@ -84,6 +90,7 @@ sync_el1h:
     bl handle_sync_exception
     kernel_exit
 
+.global irq_el1h
 irq_el1h:
     kernel_entry
     mrs x0, esr_el1
@@ -93,37 +100,14 @@ irq_el1h:
     bl handle_irq_exception
     kernel_exit
 
-/* Panic Handler: Writes 'P' to UART */
+.global invalid_exception_handler
 invalid_exception_handler:
 #ifdef BOARD_RPI4
     ldr x4, =0xFE201000
 #else
     ldr x4, =0x09000000
 #endif
-    mov w5, #80 // 'P'
+    mov w5, #69 // 'E'
     str w5, [x4]
-    wfe
-    b invalid_exception_handler
-
-sync_invalid_el1t:
-irq_invalid_el1t:
-fiq_invalid_el1t:
-error_invalid_el1t:
-fiq_invalid_el1h:
-error_invalid_el1h:
-sync_invalid_el0_64:
-irq_invalid_el0_64:
-fiq_invalid_el0_64:
-error_invalid_el0_64:
-sync_invalid_el0_32:
-irq_invalid_el0_32:
-fiq_invalid_el0_32:
-error_invalid_el0_32:
-    b invalid_exception_handler
-
-.global exceptions_init
-exceptions_init:
-    ldr x0, =exception_vector_table
-    msr vbar_el1, x0
-    isb
-    ret
+1:  wfe
+    b 1b

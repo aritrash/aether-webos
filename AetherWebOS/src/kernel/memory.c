@@ -89,3 +89,9 @@ void* ioremap(uint64_t phys_addr, size_t size) {
     // If virt_page is 0x80001000 and offset is 2, returns 0x80001002
     return (void *)((uintptr_t)virt_page + offset);
 }
+
+uint64_t heap_current_ptr = HEAP_START; // The Linker needs this definition!
+
+uint64_t get_heap_usage() {
+    return (heap_current_ptr - HEAP_START);
+}
