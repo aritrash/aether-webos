@@ -91,3 +91,81 @@ void virtqueue_push_available(struct virtqueue *vq,
     // Step 5: Ring the doorbell
     virtqueue_notify(vdev, queue_index);
 }
+
+
+
+/* =========================
+   virtio_pci_bind_queue
+   ========================= */
+
+void virtio_pci_bind_queue(struct virtio_pci_device *vdev,
+                           struct virtqueue *vq)
+{
+    uint64_t desc_phys;
+    uint64_t avail_phys;
+    uint64_t used_phys;
+
+
+    /* ----------------------------------
+       1. Select Queue
+       ---------------------------------- */
+
+    vdev->common->queue_select = vq->queue_index;
+
+
+    /* ----------------------------------
+       2. Get Physical Addresses
+       ---------------------------------- */
+
+    desc_phys  = get_phys(vq->desc);
+    avail_phys = get_phys(vq->avail);
+    used_phys  = get_phys(vq->used);
+
+
+    uart_puts("[VIRTIO] Binding queue ");
+    uart_putc('0' + vq->queue_index);
+    uart_puts("\n");
+
+
+    /* ----------------------------------
+       3. Program Descriptor Table
+       ---------------------------------- */
+
+    vdev->common->queue_desc_lo =
+        (uint32_t)(desc_phys & 0xFFFFFFFF);
+
+    vdev->common->queue_desc_hi =
+        (uint32_t)(desc_phys >> 32);
+
+
+    /* ----------------------------------
+       4. Program Available Ring
+       ---------------------------------- */
+
+    vdev->common->queue_avail_lo =
+        (uint32_t)(avail_phys & 0xFFFFFFFF);
+
+    vdev->common->queue_avail_hi =
+        (uint32_t)(avail_phys >> 32);
+
+
+    /* ----------------------------------
+       5. Program Used Ring
+       ---------------------------------- */
+
+    vdev->common->queue_used_lo =
+        (uint32_t)(used_phys & 0xFFFFFFFF);
+
+    vdev->common->queue_used_hi =
+        (uint32_t)(used_phys >> 32);
+
+
+    /* ----------------------------------
+       6. Enable Queue
+       ---------------------------------- */
+
+    vdev->common->queue_enable = 1;
+
+
+    uart_puts("[VIRTIO] Queue enabled\n");
+}
