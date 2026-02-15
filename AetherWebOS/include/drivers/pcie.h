@@ -10,12 +10,16 @@
 #define PCI_CLASS_DISPLAY         0x03
 #define PCI_CLASS_BRIDGE          0x06
 #define PCI_CLASS_SERIAL_BUS      0x0C
+
+/* --- Subclasses & Interfaces --- */
 #define PCI_SUBCLASS_USB          0x03
 #define PCI_IF_XHCI               0x30
 
+// Combined Class Code for xHCI: Class 0x0C, Subclass 0x03, Prog IF 0x30
+#define PCI_CLASS_CODE_XHCI       0x0C0330
+
 /* --- Registry Definitions --- */
 
-// Function pointer for driver initialization
 typedef void (*pci_init_fn)(uint32_t bus, uint32_t dev, uint32_t func);
 
 struct pci_driver {
@@ -35,6 +39,7 @@ struct pci_driver {
 void pcie_init(void);
 void pcie_probe_device(uint32_t bus, uint32_t dev, uint32_t func);
 uint32_t pcie_read_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg);
+void pcie_write_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg, uint32_t val);
 void pcie_dump_header(uint32_t bus, uint32_t dev, uint32_t func);
 
 #endif

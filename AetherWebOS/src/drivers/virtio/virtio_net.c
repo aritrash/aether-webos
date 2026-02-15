@@ -7,58 +7,73 @@
 void virtio_net_init(struct virtio_pci_device *vdev) {
     uart_puts("[INFO] VirtIO-Net: Starting Hardware Handshake...\r\n");
 
-    // Get the base address of the common configuration structure
     uintptr_t common = (uintptr_t)vdev->common;
     uintptr_t device = (uintptr_t)vdev->device;
 
-    // 1. Reset the device
-    mmio_write32(common + 0x14, 0); // device_status offset is 0x14 (20)
+    // 1. Reset Device
+    mmio_write32(common + 0x14, 0); 
     while (mmio_read32(common + 0x14) != 0); 
 
-    // 2. Set ACKNOWLEDGE (0x1) and DRIVER (0x2)
-    uint8_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER;
+    // 2. Acknowledge and set Driver bit
+    uint32_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER;
     mmio_write32(common + 0x14, status);
 
-    // 4. Feature Negotiation
+    // 3. Negotiate Features (64-bit total)
+    // Page 0: Standard features (like MAC)
     mmio_write32(common + 0x00, 0); // device_feature_select = 0
-    uint32_t features = mmio_read32(common + 0x04); // device_feature is at 0x04
-
-    uint32_t accepted = 0;
-    if (features & (1ULL << 32)) { // VIRTIO_NET_F_MAC is bit 32 (often features[1])
-        // Note: For simplicity, we check if the MAC feature is present
-    }
+    uint32_t f0 = mmio_read32(common + 0x04);
     
-    // Most QEMU VirtIO nets provide MAC at bit 5 of feature set 0
-    if (features & (1 << 5)) {
-        accepted |= (1 << 5);
-    }
+    // Page 1: Modern features (like VERSION_1)
+    mmio_write32(common + 0x00, 1); // device_feature_select = 1
+    uint32_t f1 = mmio_read32(common + 0x04);
 
+    uint32_t accept0 = 0;
+    uint32_t accept1 = 0;
+
+    // Accept MAC (bit 5 of Page 0)
+    if (f0 & (1 << 5)) accept0 |= (1 << 5);
+    
+    // MANDATORY: Accept VERSION_1 (bit 0 of Page 1, which is bit 32 total)
+    if (f1 & (1 << 0)) accept1 |= (1 << 0);
+
+    // Write back accepted features
     mmio_write32(common + 0x08, 0); // driver_feature_select = 0
-    mmio_write32(common + 0x0C, accepted); // driver_feature is at 0x0C
+    mmio_write32(common + 0x0C, accept0);
+    
+    mmio_write32(common + 0x08, 1); // driver_feature_select = 1
+    mmio_write32(common + 0x0C, accept1);
 
-    // 5. Set FEATURES_OK (0x8)
+    // 4. Finalize Features
     status |= VIRTIO_STATUS_FEATURES_OK;
     mmio_write32(common + 0x14, status);
 
-    // 6. Verify FEATURES_OK
+    // 5. Verification
     if (!(mmio_read32(common + 0x14) & VIRTIO_STATUS_FEATURES_OK)) {
-        uart_puts("[ERROR] VirtIO-Net: Features rejected by hardware!\r\n");
+        uart_puts("[ERROR] VirtIO-Net: Hardware rejected feature set (VERSION_1 missing?)\r\n");
         return;
     }
 
-    // 7. Set DRIVER_OK (0x4)
+    // 6. Device is LIVE
     status |= VIRTIO_STATUS_DRIVER_OK;
     mmio_write32(common + 0x14, status);
-
     uart_puts("[OK] VirtIO-Net: Handshake Complete. Device is LIVE.\r\n");
 
-    // 8. Output the MAC Address
-    // The MAC address is in the Device Config space (vdev->device)
+    // 7. Read MAC Address surgically
+    // MAC is 6 bytes. We read two 32-bit aligned dwords and shift.
     uart_puts("[INFO] Hardware MAC: ");
+    uint32_t mac_low = mmio_read32(device);      // Bytes 0, 1, 2, 3
+    uint32_t mac_high = mmio_read32(device + 4); // Bytes 4, 5
+    
+    uint8_t mac[6];
+    mac[0] = (mac_low >> 0) & 0xFF;
+    mac[1] = (mac_low >> 8) & 0xFF;
+    mac[2] = (mac_low >> 16) & 0xFF;
+    mac[3] = (mac_low >> 24) & 0xFF;
+    mac[4] = (mac_high >> 0) & 0xFF;
+    mac[5] = (mac_high >> 8) & 0xFF;
+
     for (int i = 0; i < 6; i++) {
-        // We use mmio_read32 and mask to get individual bytes safely
-        uint8_t val = (uint8_t)(mmio_read32(device + i) & 0xFF);
-        uart_put_hex(val);
+        uart_put_hex(mac[i]);
         if (i < 5) uart_puts(":");
     }
     uart_puts("\r\n");

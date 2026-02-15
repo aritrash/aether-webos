@@ -72,7 +72,9 @@ clean:
 	rm -rf $(BUILD_DIR) *.img
 
 run: all
-	qemu-system-aarch64 -M $(QEMU_MACHINE) $(QEMU_EXTRA) \
-	-serial stdio \
-	-monitor telnet:127.0.0.1:4444,server,nowait \
+	qemu-system-aarch64 -M virt,gic-version=3,highmem=off \
+	-cpu max -m 1G -serial stdio -display none \
+	-device qemu-xhci,p2=15,p3=15 \
+	-device usb-tablet \
+	-netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
 	-kernel kernel8.img
