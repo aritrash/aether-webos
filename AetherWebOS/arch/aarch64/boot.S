@@ -16,37 +16,35 @@ master:
     and     x0, x0, #0b1100
     lsr     x0, x0, #2
     cmp     x0, #2
-    b.ne    setup_stack        /* If not EL2, skip the drop */
+    b.ne    setup_fpu         /* If already EL1, go to FPU setup */
 
     /* --- Transition from EL2 to EL1 --- */
-    /* 1. Enable EL1 access to the timer */
     mrs     x0, cnthctl_el2
     orr     x0, x0, #3
     msr     cnthctl_el2, x0
     msr     cntvoff_el2, xzr
 
-    /* 2. Set EL1 to AArch64 (Execution state) */
     mov     x0, #(1 << 31)     /* RW=1 (EL1 is AArch64) */
-    orr     x0, x0, #(1 << 1)  /* SWIO hardwired on Pi */
+    orr     x0, x0, #(1 << 1)  
     msr     hcr_el2, x0
 
-    /* 3. Prepare SPSR_EL2 (Saved Program Status Register) */
-    /* Mask all interrupts and set mode to EL1h (using SP_EL1) */
-    mov     x0, #0x3c5         /* 0b1111000101: D,A,I,F masked, EL1h */
+    mov     x0, #0x3c5         /* D,A,I,F masked, EL1h */
     msr     spsr_el2, x0
 
-    /* 4. Set the return address to our stack setup label */
-    adr     x0, setup_stack
+    adr     x0, setup_fpu
     msr     elr_el2, x0
-
-    /* 5. Drop the bomb */
     eret
+
+setup_fpu:
+    /* CRITICAL: Enable FP/SIMD access to prevent "Unknown Instruction" traps */
+    mov     x0, #(3 << 20)     /* CPACR_EL1.FPEN = 0b11 (No trap) */
+    msr     cpacr_el1, x0
+    isb
 
 setup_stack:
     ldr     x0, =stack_top
     bic     x0, x0, #0xF
     mov     sp, x0
-    isb
 
     /* Clear BSS */
     ldr     x0, =__bss_start
