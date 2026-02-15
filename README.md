@@ -103,7 +103,8 @@ We are currently implementing the **Virtqueue Shared Memory** model to enable hi
 [OK] VirtIO: Mapping Successful.
 [INFO] VirtIO-Net: Starting Hardware Handshake...
 [OK] VirtIO-Net: Handshake Complete. Device is LIVE.
-[INFO] Hardware MAC: 0x0000000000000052:0x0000000000000054:0x0000000000000000:0x0000000000000012:0x0000000000000034:0x0000000000000056
+[INFO] Hardware MAC: 0x0000000000000052:0x0000000000000054:0x0000000000000000:0x0000000000000012:
+0x0000000000000034:0x0000000000000056
 [OK] PCIe Enumeration Complete.
 
 [OK] PCIe Enumeration & Driver Handshakes Complete.
@@ -118,7 +119,7 @@ Clone the repository. Then open a terminal in the directory, and then:
 
 1. Open docs/installers.md and follow the steps.
 
-2. Run the installer after successful installation of the arm gnu toolchain from [text](https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-aarch64-none-elf.msi)
+2. Run the installer after successful installation of the arm gnu toolchain from [ARM Developer](https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-aarch64-none-elf.msi)
 
 3. Locate the bin/ folder in the installed folder (generally C:\Program Files (x86)\Arm GNU Toolchain aarch64-none-elf\14.3 rel1\bin in Windows) and add it to your environment variables.
 
