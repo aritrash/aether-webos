@@ -33,7 +33,7 @@ void virtqueue_init(struct virtqueue *vq, uint16_t size, void *p) {
     for (uint16_t i = 0; i < size - 1; i++) {
         vq->desc[i].next = i + 1;
     }
-    
+
     vq->last_used_idx = 0;
 }
 
@@ -65,4 +65,29 @@ void virtqueue_notify(struct virtio_pci_device *vdev, uint16_t queue_index) {
 
     // 3. Ring the doorbell (write the queue index)
     *(volatile uint16_t *)notify_addr = queue_index;
+}
+
+/* =========================
+   virtqueue_push_available
+   ========================= */
+
+void virtqueue_push_available(struct virtqueue *vq,
+                              struct virtio_pci_device *vdev,
+                              uint16_t queue_index,
+                              uint16_t desc_head)
+{
+    // Step 1: Get current index
+    uint16_t idx = vq->avail->idx;
+
+    // Step 2: Place descriptor head into the ring
+    vq->avail->ring[idx % vq->size] = desc_head;
+
+    // Step 3: Memory barrier before publishing
+    asm volatile("dsb sy" : : : "memory");
+
+    // Step 4: Increment available index
+    vq->avail->idx = idx + 1;
+
+    // Step 5: Ring the doorbell
+    virtqueue_notify(vdev, queue_index);
 }
