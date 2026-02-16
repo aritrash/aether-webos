@@ -18,7 +18,7 @@ extern void enable_interrupts(void);
 extern char _binary_assets_banner_txt_start[];
 extern char _binary_assets_banner_txt_end[];
 
-// Forward declaration of the shutdown orchestrator
+// Forward declaration
 void kernel_shutdown(void);
 
 /**
@@ -27,7 +27,7 @@ void kernel_shutdown(void);
 void kernel_main() {
     uart_init();
 
-    // 1. Splash & Identity (UART Debug Mode)
+    // 1. Splash & Identity
     char* banner = _binary_assets_banner_txt_start;
     char* banner_end = _binary_assets_banner_txt_end;
     while (banner < banner_end) {
@@ -40,38 +40,22 @@ void kernel_main() {
     uart_put_hex((uint64_t)&kernel_main);
     uart_puts("\r\n[OK] Aether Core Online.");
 
-    // 2. Fundamental CPU/Arch Setup
+    // 2. Fundamental Setup
     exceptions_init();
-    uart_puts("\r\n[OK] Exception Vector Table Loaded.\r\n");
-
-    // 3. Memory Infrastructure
     mmu_init(); 
-    uart_puts("[OK] MMU Active (L3 Surgical Mapping Enabled).\r\n");
-
     kmalloc_init();
-    uart_puts("[OK] Kernel Heap Ready.\r\n");
-
-    // 4. Device Discovery & Drivers
     pcie_init();
-    uart_puts("\r\n[OK] PCIe Enumeration & Driver Handshakes Complete.\r\n");
-
-    // 5. Interrupts & System Services
     gic_init();
     timer_init();
-    uart_puts("[OK] GIC and Global Timer (100Hz) Online.\r\n");
-
-    // Start the hardware heartbeat
     enable_interrupts();
-    uart_puts("[OK] Interrupts Unmasked (EL1). System is Operational.\r\n");
 
-    // --- THE HANDOVER ---
     uart_puts("\r\n[OK] Boot Sequence Complete. Starting Portal...\r\n");
-    
-    // Brief delay so the user can read the success logs
     for(int i = 0; i < 5000000; i++) asm volatile("nop");
 
     /* INITIALIZE THE UI TRACKER */
     uint64_t last_refresh = 0;
+    int esc_state = 0;
+    int waiting_for_confirm = 0;
     portal_start(); 
 
     while(1) {
@@ -79,28 +63,60 @@ void kernel_main() {
 
         // 1. UI Refresh Logic (10 FPS)
         if (current_time - last_refresh >= 100) {
-            // Safety: Only render if UART isn't choked
             if (uart_is_writable()) {
                 portal_refresh_state();
-                portal_render_terminal(); 
+                
+                if (waiting_for_confirm) {
+                    // Overlays a "Confirm Shutdown?" box over the portal
+                    portal_render_confirm_prompt(); 
+                } else {
+                    portal_render_terminal(); 
+                }
                 last_refresh = current_time;
             }
         }
 
-        // 2. Input Handling (Interaction Phase)
-        // Check if a key was pressed (UART Flag Register bit 4 is RXFE - Receive FIFO Empty)
-        // We use the raw register check here to avoid blocking inside uart_getc
+        // 2. Advanced Input Handling (Sequence Detection)
         if (!(*UART0_FR & (1 << 4))) { 
-            char c = uart_getc();
-            if (c == 'q' || c == 'Q') {
-                kernel_shutdown();
+            unsigned char c = uart_getc();
+
+            // Case A: User is currently at the Confirmation Prompt
+            if (waiting_for_confirm) {
+                if (c == '\r' || c == '\n') kernel_shutdown(); // Confirmed
+                if (c == 0x1B) waiting_for_confirm = 0;        // Cancel (ESC)
+                continue;
+            }
+
+            // Case B: Parsing Escape Sequences for F7 / Ctrl+Alt+F7
+            // Typical F7 Sequence: ESC [ 1 8 ~
+            // Typical C+A+F7 Sequence: ESC [ 1 8 ; 7 ~
+            if (c == 0x1B) {
+                esc_state = 1; // Start of sequence
+            } else if (esc_state == 1 && c == '[') {
+                esc_state = 2;
+            } else if (esc_state == 2 && c == '1') {
+                esc_state = 3;
+            } else if (esc_state == 3 && c == '8') {
+                esc_state = 4;
+            } else if (esc_state == 4) {
+                if (c == '~') {
+                    waiting_for_confirm = 1; // Trigger "Soft" Shutdown Prompt
+                    esc_state = 0;
+                } else if (c == ';') {
+                    esc_state = 5; // Possible modifier coming up
+                } else {
+                    esc_state = 0;
+                }
+            } else if (esc_state == 5 && c == '7') {
+                esc_state = 6; // '7' denotes Ctrl+Alt modifier in many terminals
+            } else if (esc_state == 6 && c == '~') {
+                kernel_shutdown(); // Trigger "Hard" Absolute Shutdown
+            } else {
+                esc_state = 0; // Reset state machine on mismatch
             }
         }
 
-        /*
-         * Wait For Interrupt (WFI)
-         * CPU sleeps to save power until the next timer tick or keypress.
-         */
+        /* Wait For Interrupt */
         asm volatile("wfi"); 
     }
 }
@@ -109,30 +125,20 @@ void kernel_main() {
  * kernel_shutdown: Graceful exit sequence
  */
 void kernel_shutdown() {
-    // 1. Clear Portal and show final status
     uart_puts("\033[2J\033[H"); 
     uart_puts("===========================================\r\n");
     uart_puts("       AETHER WebOS :: SYSTEM HALTING      \r\n");
     uart_puts("===========================================\r\n");
 
-    // 2. Mask interrupts to prevent re-entry
-    asm volatile("msr daifset, #2");
-    uart_puts("[INFO] Interrupts masked.\r\n");
-
-    // 3. Park the VirtIO Network hardware
+    asm volatile("msr daifset, #2"); // Mask IRQs
+    
     if (global_vnet_dev) {
         virtio_pci_reset(global_vnet_dev);
     }
 
-    // 4. Final log and flush
-    uart_puts("[INFO] Aether Core: Goodbye.\r\n");
-    
-    // Tiny delay for UART FIFO to empty
+    uart_puts("[INFO] Aether Core: Goodbye, Aritrash.\r\n");
     for(int i = 0; i < 2000000; i++) asm volatile("nop");
 
-    // 5. Signal PSCI to Power Off
     psci_system_off();
-
-    // Catch-all
     while(1) { asm volatile("wfi"); }
 }

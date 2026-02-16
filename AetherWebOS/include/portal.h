@@ -20,6 +20,7 @@ typedef struct {
 void portal_refresh_state();
 char* portal_get_json();
 void portal_render_terminal();
-void portal_start(); 
+void portal_start();
+void portal_render_confirm_prompt(); 
 
 #endif

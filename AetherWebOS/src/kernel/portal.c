@@ -11,7 +11,7 @@ extern struct virtio_pci_device *global_vnet_dev;
 
 static portal_state_t current_state;
 static char json_buffer[512];
-static int portal_active = 0; // The Gatekeeper
+static int portal_active = 0; 
 
 void uart_put_hex_byte(uint8_t byte) {
     const char *hex = "0123456789ABCDEF";
@@ -43,15 +43,31 @@ char* portal_get_json() {
 
 void portal_start() {
     portal_active = 1;
-    // Clear screen and reset cursor to top-left for the first time
     uart_puts("\033[2J\033[H"); 
 }
 
-void portal_render_terminal() {
-    // CRITICAL: If the portal hasn't been started yet, do not output anything.
+/**
+ * portal_render_confirm_prompt: Renders a red modal box for shutdown confirmation.
+ */
+void portal_render_confirm_prompt() {
     if (!portal_active) return;
 
-    // Use Home Cursor sequence to reset position without flickering the whole screen
+    // Use absolute positioning to place the box in the center
+    // Format: \033[Line;ColumnH
+    uart_puts("\033[8;2H"); 
+    uart_puts("\033[1;37;41m"); // Bright White on Red Background
+    uart_puts("#########################################\r\n");
+    uart_puts("\033[9;2H#                                       #\r\n");
+    uart_puts("\033[10;2H#       CONFIRM SYSTEM SHUTDOWN?        #\r\n");
+    uart_puts("\033[11;2H#    [ENTER] Confirm | [ESC] Cancel     #\r\n");
+    uart_puts("\033[12;2H#                                       #\r\n");
+    uart_puts("\033[13;2H#########################################\r\n");
+    uart_puts("\033[0m"); // Reset colors
+}
+
+void portal_render_terminal() {
+    if (!portal_active) return;
+
     uart_puts("\033[H"); 
     
     uart_puts("===========================================\r\n");
