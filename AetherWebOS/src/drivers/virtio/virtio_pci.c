@@ -100,3 +100,26 @@ void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func) {
         uart_puts("[ERROR] VirtIO: Critical Capability Banks missing.\r\n");
     }
 }
+
+/**
+ * virtio_pci_reset: Standard VirtIO 1.0 Reset Sequence
+ */
+void virtio_pci_reset(struct virtio_pci_device *vdev) {
+    if (!vdev || !vdev->common) return;
+
+    uart_puts("[VIRTIO] Resetting device state...\r\n");
+
+    /* * 1. Setting device_status to 0 triggers a reset.
+     * This stops all DMA and clears all configuration.
+     */
+    vdev->common->device_status = 0;
+
+    /* * 2. The spec requires the driver to wait until the device 
+     * confirms the reset by reading 0 back from the status register.
+     */
+    while (vdev->common->device_status != 0) {
+        asm volatile("nop");
+    }
+
+    uart_puts("[OK] VirtIO Device Parked.\r\n");
+}

@@ -38,5 +38,6 @@ void uart_init();
 void uart_putc(unsigned char c);
 void uart_puts(const char* str);
 unsigned char uart_getc();
+int uart_is_writable(void);
 
 #endif

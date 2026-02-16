@@ -92,4 +92,10 @@ void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func);
  */
 void virtio_pci_cap_lookup(struct virtio_pci_device *vdev);
 
+/**
+ * virtio_pci_reset: Instructs the device to stop all operations
+ * and reset its internal state to default.
+ */
+void virtio_pci_reset(struct virtio_pci_device *vdev);
+
 #endif /* VIRTIO_PCI_H */
