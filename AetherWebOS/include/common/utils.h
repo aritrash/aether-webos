@@ -17,4 +17,8 @@ void enable_interrupts(void);
 void disable_interrupts(void);
 void* memset(void* s, int c, size_t n) __attribute__((nonnull (1)));
 
+void str_clear(char* str);
+void str_append(char* str, const char* data);
+void str_append_kv_int(char* str, const char* key, uint64_t value);
+
 #endif
