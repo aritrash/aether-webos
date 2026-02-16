@@ -37,6 +37,8 @@
     #define PERIPHERAL_START   0x00000000
     #define PERIPHERAL_END     0x3FFFFFFF
 
+    
+
 #else
     /* --- Raspberry Pi 4 (BCM2711) Map --- */
     #define UART0_BASE         0xFE201000
