@@ -14,7 +14,16 @@
 
 /* =====================================================
    System Modes for UI Arbiter
+   Last Developer: Aritrash Sarkar
+   Changes: - Updated mac and ip addresses to be configurable via setup wizard.
+            - Added network polling to main loop for Roheet's stack.
+            - Updated to v1.0.5 of the kernel spec with new virtio_net_poll() function.
+    Date: 16.02.2026
    ===================================================== */
+
+   // Define the Aether OS Network Identity
+uint8_t aether_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}; // QEMU Default MAC
+uint32_t aether_ip = 0x0100A8C0; // 192.168.0.1 in Little Endian (adjust as needed)
 
 typedef enum {
     MODE_PORTAL,

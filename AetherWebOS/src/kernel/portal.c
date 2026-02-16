@@ -6,6 +6,7 @@
 #include "kernel/memory.h"
 #include "config.h"        
 #include "utils.h"
+#include "kernel/health.h"
 
 extern struct virtio_pci_device *global_vnet_dev;
 
@@ -25,9 +26,12 @@ void portal_refresh_state() {
     current_state.heap_usage_kb = get_heap_usage() / 1024;
     current_state.device_count = get_total_pci_devices();
 
+    // Pull real-time networking stats from Ankana's module
+    current_state.packets_rx = global_net_stats.rx_packets;
+    current_state.packets_tx = global_net_stats.tx_packets;
+
     if (global_vnet_dev && global_vnet_dev->device) {
         current_state.link_status = 1;
-        // Sync hardware MAC to portal state for JSON export
         for(int i = 0; i < 6; i++) {
             current_state.mac[i] = global_vnet_dev->device->mac[i];
         }
@@ -114,7 +118,7 @@ void portal_render_wizard() {
     uart_puts("\033[1;2H\033[1;37;44m"); // Bold White on Red
     uart_puts("#################################################\r\n");
     uart_puts("\033[2;2H#                                               #\r\n");
-    uart_puts("\033[3;2H#       AETHER SERVER SETUP WIZARD v0.1.4       #\r\n");
+    uart_puts("\033[3;2H#       AETHER SERVER SETUP WIZARD v0.1.5       #\r\n");
     uart_puts("\033[4;2H#                                               #\r\n");
     uart_puts("\033[5;2H#################################################\r\n\033[0m");
     
@@ -135,7 +139,7 @@ void portal_render_terminal() {
     uart_puts("\033[H"); // Reset cursor to 0,0
     
     uart_puts("===========================================\r\n");
-    uart_puts("         AETHER WebOS :: Portal v0.1.4     \r\n");
+    uart_puts("         AETHER WebOS :: Portal v0.1.5     \r\n");
     uart_puts("===========================================\r\n");
     
     uint64_t ms = current_state.uptime_ms;
