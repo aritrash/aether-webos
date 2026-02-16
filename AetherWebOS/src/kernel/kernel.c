@@ -136,7 +136,7 @@ void kernel_shutdown() {
         virtio_pci_reset(global_vnet_dev);
     }
 
-    uart_puts("[INFO] Aether Core: Goodbye, Aritrash.\r\n");
+    uart_puts("[INFO] Aether Core: Shutdown Complete.\r\n");
     for(int i = 0; i < 2000000; i++) asm volatile("nop");
 
     psci_system_off();
