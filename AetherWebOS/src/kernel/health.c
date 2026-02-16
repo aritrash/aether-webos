@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "kernel/health.h"
 #include "uart.h"
 #include "utils.h" 
