@@ -3,24 +3,34 @@
 
 #include <stdint.h>
 
+/**
+ * portal_state_t: The master state object for the Aether WebOS ecosystem.
+ * This struct is mirrored by Roheet's React state management.
+ */
 typedef struct {
-    // Connectivity
-    char mac[18];
-    uint32_t ip_addr;     /* Placeholder for DHCP */
+    // Connectivity & Networking
+    uint8_t  mac[6];
+    uint32_t ip_addr;     /* Placeholder for DHCP/Static IP */
     uint8_t  link_status; /* 1 = Up, 0 = Down */
+    uint32_t packets_rx;  /* Real-time counter for Sniffer App */
+    uint32_t packets_tx;
 
-    // Clock (Using Global Timer)
+    // Clock & Timing
     uint64_t uptime_ms;
     
-    // System Health
+    // System Health & Topology
     uint32_t heap_usage_kb;
     uint32_t device_count;
+    uint8_t  cpu_load;    /* Calculated via Timer IRQ duty cycle */
 } portal_state_t;
 
-void portal_refresh_state();
-char* portal_get_json();
-void portal_render_terminal();
-void portal_start();
-void portal_render_confirm_prompt(); 
+/* --- Lifecycle & Rendering --- */
+void portal_start(void);
+void portal_refresh_state(void);
+char* portal_get_json(void);
 
-#endif
+/* --- Terminal UI (ANSI) --- */
+void portal_render_terminal(void);
+void portal_render_confirm_prompt(void); 
+
+#endif /* PORTAL_H */
