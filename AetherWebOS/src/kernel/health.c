@@ -1,6 +1,5 @@
-#include <stdio.h>
 #include "kernel/health.h"
-#include "uart.h"
+#include "drivers/uart.h"
 #include "utils.h" 
 
 // IMPORTANT: Do NOT put 'typedef struct' here. 
