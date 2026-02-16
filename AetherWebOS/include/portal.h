@@ -33,4 +33,9 @@ char* portal_get_json(void);
 void portal_render_terminal(void);
 void portal_render_confirm_prompt(void); 
 
+/* --- AetherBridge UI --- */
+void portal_render_wizard();      
+void portal_handle_input(char c);
+void portal_render_loading();
+
 #endif /* PORTAL_H */

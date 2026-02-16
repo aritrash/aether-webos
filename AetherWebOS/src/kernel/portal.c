@@ -92,6 +92,43 @@ void portal_render_confirm_prompt() {
     uart_puts("\033[13;2H#########################################\r\n\033[0m");
 }
 
+/**
+ * portal_render_loading: Renders a BIOS-style progress bar.
+ */
+void portal_render_loading() {
+    uart_puts("\r\n ACTIVATING BRIDGE: [");
+    for (int i = 0; i < 20; i++) {
+        uart_puts("#"); // Filling the bar
+        // Delay to simulate work (Approx 50ms)
+        for (volatile int d = 0; d < 1000000; d++); 
+    }
+    uart_puts("] 100%\r\n");
+    uart_puts(" [OK] Bridge Hot. Signal sent to Host.\r\n");
+    for (volatile int d = 0; d < 5000000; d++); // Pause to show success
+}
+
+/**
+ * portal_render_wizard: The "AetherServer Setup Wizard" (F10)
+ */
+void portal_render_wizard() {
+    uart_puts("\033[1;2H\033[1;37;44m"); // Bold White on Red
+    uart_puts("#################################################\r\n");
+    uart_puts("\033[2;2H#                                               #\r\n");
+    uart_puts("\033[3;2H#       AETHER SERVER SETUP WIZARD v0.1.4       #\r\n");
+    uart_puts("\033[4;2H#                                               #\r\n");
+    uart_puts("\033[5;2H#################################################\r\n\033[0m");
+    
+    uart_puts(" This wizard will bridge your AArch64 Kernel to\r\n");
+    uart_puts(" the Aether WebOS via WebSocket (Port 8080).\r\n\r\n");
+    
+    uart_puts(" [INFO] Host TCP Link: 127.0.0.1:1234\r\n");
+    uart_puts(" [INFO] Protocol: AetherData/v1\r\n\r\n");
+    
+    uart_puts(" Press [ENTER] to START AetherBridge\r\n");
+    uart_puts(" Press [ESC] to CANCEL\r\n\r\n");
+    uart_puts("-------------------------------------------------\r\n");
+}
+
 void portal_render_terminal() {
     if (!portal_active) return;
 

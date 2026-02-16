@@ -56,4 +56,7 @@ struct virtio_pci_device;
 void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func);
 void virtio_net_init(struct virtio_pci_device *vdev);
 
+/* Network polling */
+void virtio_net_poll(struct virtio_pci_device *vdev);
+
 #endif
