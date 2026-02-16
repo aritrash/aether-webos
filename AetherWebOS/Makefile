@@ -14,8 +14,6 @@ ASSETS_DIR = assets
 INC_DIR   = include
 
 # --- Flags ---
-# Use := to expand once. We wrap in quotes and use subst to flip backslashes to forward slashes
-# just in case the toolchain returns Windows-style paths.
 INTERNAL_INC := "$(subst \,/,$(shell $(CC) -print-file-name=include))"
 
 INCLUDES = -I$(INC_DIR) \
@@ -31,13 +29,11 @@ ASMFLAGS = $(COMMON_FLAGS)
 # --- Discovery ---
 SRCS_C := $(shell find $(SRC_DIR) $(ARCH_DIR) -name "*.c")
 SRCS_S := $(shell find $(SRC_DIR) $(ARCH_DIR) -name "*.S")
-# Wrap objects in quotes to be safe, though not strictly necessary if paths have no spaces
 OBJS := $(SRCS_C:%.c=$(BUILD_DIR)/%.o) $(SRCS_S:%.S=$(BUILD_DIR)/%.o) $(BUILD_DIR)/banner.o
 
 all: kernel8.img
 
 # --- Pattern Rules ---
-# Added quotes around directory targets and file paths
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p "$(dir $@)"
 	@$(CC) $(CFLAGS) -c "$<" -o "$@"
@@ -54,10 +50,17 @@ $(BUILD_DIR)/banner.o: $(ASSETS_DIR)/banner.txt
 ifeq ($(BOARD), VIRT)
     KERNEL_ADDR = 0x40080000
     QEMU_MACHINE = virt,gic-version=3,highmem=off 
-    QEMU_EXTRA = -cpu max -m 1G -display none -machine virtualization=off
+    QEMU_CPU = max
+    QEMU_RAM = 1G
+    # Standard Serial + TCP Bridge for WebUI
+    QEMU_SERIAL = -serial stdio -serial tcp:127.0.0.1:1234,server,nowait
+    QEMU_EXTRA = -display none -machine virtualization=off
 else
     KERNEL_ADDR = 0x80000
     QEMU_MACHINE = raspi4b
+    QEMU_CPU = cortex-a72
+    QEMU_RAM = 2G
+    QEMU_SERIAL = -serial stdio
     QEMU_EXTRA = 
 endif
 
@@ -72,8 +75,9 @@ clean:
 	rm -rf $(BUILD_DIR) *.img
 
 run: all
-	qemu-system-aarch64 -M virt,gic-version=3,highmem=off \
-	-cpu max -m 1G -serial stdio -display none \
+	qemu-system-aarch64 -M $(QEMU_MACHINE) \
+	-cpu $(QEMU_CPU) -m $(QEMU_RAM) \
+	$(QEMU_SERIAL) $(QEMU_EXTRA) \
 	-device qemu-xhci,p2=15,p3=15 \
 	-device usb-tablet \
 	-netdev user,id=net0 -device virtio-net-pci,netdev=net0 \

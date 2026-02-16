@@ -13,15 +13,19 @@
     #define GIC_DIST_BASE      0x08000000
     
     /**
+     * TIMER_IRQ_ID: Physical Timer (Non-Secure)
+     * For QEMU 'virt', this is typically Interrupt ID 30.
+     */
+    #define TIMER_IRQ_ID       30
+
+    /**
      * PCIE_PHYS_BASE: The actual hardware address in QEMU.
      * Note: 0x3f000000 is the standard for 'highmem=off'.
-     * If this still returns silence, 0x10000000 is the alternative.
      */
     #define PCIE_PHYS_BASE     0x3f000000LL 
 
     /**
      * PCIE_EXT_CFG_DATA: The VIRTUAL address our kernel uses.
-     * The MMU in mmu.c will map:
      * Virtual 0x70000000 -> Physical 0x3f000000
      */
     #define PCIE_EXT_CFG_DATA  0x70000000
@@ -38,6 +42,12 @@
     #define UART0_BASE         0xFE201000
     #define GIC_DIST_BASE      0xFF841000
     
+    /**
+     * TIMER_IRQ_ID: Physical Timer on RPi4. 
+     * Usually maps to ID 97 in the GIC.
+     */
+    #define TIMER_IRQ_ID       97
+
     /* Pi4 PCIe Controller Registers */
     #define PCIE_REG_BASE      0xFD500000
     

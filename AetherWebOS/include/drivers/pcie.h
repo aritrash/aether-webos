@@ -41,5 +41,6 @@ void pcie_probe_device(uint32_t bus, uint32_t dev, uint32_t func);
 uint32_t pcie_read_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg);
 void pcie_write_config(uint32_t bus, uint32_t dev, uint32_t func, uint32_t reg, uint32_t val);
 void pcie_dump_header(uint32_t bus, uint32_t dev, uint32_t func);
+uint32_t get_total_pci_devices();
 
 #endif
