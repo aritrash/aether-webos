@@ -83,6 +83,7 @@ uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint
 
 /* ==========================================================================
    virtqueue_push_available: Publishes the descriptor to the hardware
+   Developer: Roheet Purkayastha
    ========================================================================== */
 void virtqueue_push_available(struct virtio_pci_device *vdev, struct virtqueue *vq, uint16_t desc_head) {
     uint16_t idx = vq->avail->idx;
@@ -99,6 +100,7 @@ void virtqueue_push_available(struct virtio_pci_device *vdev, struct virtqueue *
 
 /* ==========================================================================
    virtio_pci_bind_queue: Registers the rings with the PCI device
+   Developer: Pritam Mondal
    ========================================================================== */
 void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq) {
     // Select the specific queue for programming
@@ -127,49 +129,29 @@ void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq)
     uart_puts("[VIRTIO] Queue enabled\r\n");
 }
 
-#include <stdint.h>
-
-struct virtq_used_elem {
-    uint32_t id;
-    uint32_t len;
-};
-
-struct virtq_desc {
-    uint32_t addr;
-    uint32_t len;
-    uint16_t flags;
-    uint16_t next;
-};
-
-struct virtqueue {
-    uint16_t size;
-    uint16_t last_used_idx;
-    uint16_t free_head;
-    uint16_t num_free;
-
-    struct virtq_desc *desc;
-
-    struct {
-        uint16_t idx;
-        struct virtq_used_elem *ring;
-    } *used;
-};
-
+/* ==========================================================================
+   virtqueue_pop_used: Adrija's logic integrated into Aether Core.
+   Developer: Adrija Ghosh
+   ========================================================================== */
 int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
-    // 1. Check if there is a new receipt from the hardware
+    // 1. Check if hardware has processed anything (Volatile read)
     if (vq->last_used_idx == *(volatile uint16_t *)&vq->used->idx) {
-        return -1; // No new packet yet
+        return -1; 
     }
 
-    // 2. Grab the receipt from the used ring
+    // Memory Barrier: Sync memory before reading descriptor data
+    asm volatile("dmb ish" : : : "memory");
+
+    // 2. Grab the receipt
     struct virtq_used_elem *receipt = &vq->used->ring[vq->last_used_idx % vq->size];
     uint16_t desc_id = (uint16_t)receipt->id;
-    *len_out = receipt->len; // Actual data length received
+    
+    if (len_out) {
+        *len_out = receipt->len; 
+    }
 
-    // 3. Move the internal counter forward
+    // 3. Move counter and recycle descriptor
     vq->last_used_idx++;
-
-    // 4. Free the descriptor so it can be reused
     vq->desc[desc_id].next = vq->free_head;
     vq->free_head = desc_id;
     vq->num_free++;
