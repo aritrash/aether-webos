@@ -48,41 +48,6 @@ struct virtio_pci_cap {
     uint32_t length;       /* Length of the config block */
 } __attribute__((packed));
 
-/**
- * 2. Common Configuration Structure
- * The "Control Panel" for the device.
- */
-struct virtio_pci_common_cfg {
-    uint32_t device_feature_select; /* read-write */
-    uint32_t device_feature;        /* read-only */
-    uint32_t driver_feature_select; /* read-write */
-    uint32_t driver_feature;        /* read-write */
-    uint16_t msix_config;           /* read-write */
-    uint16_t num_queues;            /* read-only */
-    uint8_t  device_status;         /* read-write */
-    uint8_t  config_generation;     /* read-only */
-
-    /* About a specific virtqueue */
-    uint16_t queue_select;          /* read-write */
-    uint16_t queue_size;            /* read-write */
-    uint16_t queue_msix_vector;     /* read-write */
-    uint16_t queue_enable;          /* read-write */
-    uint16_t queue_notify_off;      /* read-only */
-    uint64_t queue_desc;            /* read-write */
-    uint64_t queue_avail;           /* read-write */
-    uint64_t queue_used;            /* read-write */
-} __attribute__((packed));
-
-/**
- * 3. Network Device Configuration
- * Specific to the Ethernet card (MAC address, etc).
- */
-struct virtio_net_config {
-    uint8_t  mac[6];
-    uint16_t status;
-    uint16_t max_virtqueue_pairs;
-    uint16_t mtu;
-} __attribute__((packed));
 
 /* Forward declaration for the master device struct */
 struct virtio_pci_device;

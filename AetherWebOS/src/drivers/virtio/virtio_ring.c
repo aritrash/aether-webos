@@ -1,42 +1,69 @@
 #include "drivers/virtio/virtio_ring.h"
 #include "drivers/virtio/virtio_pci.h"
 #include "drivers/virtio/virtio_net.h"
-#include "kernel/memory.h" // Needed for virtual_to_phys translation
+#include "kernel/memory.h"
 #include "drivers/uart.h"
+#include "utils.h"
 
-/* Helper to get physical address from a virtual pointer */
+/**
+ * get_phys: Identity mapping helper for Aether OS
+ */
 static uint64_t get_phys(void* virt) {
-    // For now, if using Identity Mapping: return (uint64_t)virt;
-    // Once Adrija's MMU code is full: return mmu_translate_v2p(virt);
     return (uint64_t)virt; 
 }
 
-void virtqueue_init(struct virtqueue *vq, uint16_t size, void *p) {
+/* ==========================================================================
+   virtqueue_notify: Rings the doorbell to alert the device of new buffers
+   ========================================================================== */
+void virtqueue_notify(struct virtio_pci_device *vdev, uint16_t queue_index) {
+    // 1. Tell common config which queue we are talking about
+    vdev->common->queue_select = queue_index;
+    
+    // 2. Get the specific doorbell offset for this queue
+    uint16_t notify_off = vdev->common->queue_notify_off;
+
+    // 3. Calculate absolute doorbell address (MMIO)
+    uintptr_t notify_addr = (uintptr_t)vdev->notify_base + 
+                            (notify_off * vdev->notify_off_multiplier);
+
+    // 4. Ring the doorbell (write the queue index to the PCI BAR)
+    *(volatile uint16_t *)notify_addr = queue_index;
+}
+
+/* ==========================================================================
+   virtqueue_init: Sets up the Descriptor Table, Available Ring, and Used Ring
+   ========================================================================== */
+void virtqueue_init(struct virtqueue *vq, uint16_t size, uint16_t index, void *p) {
     uintptr_t base = (uintptr_t)p;
     vq->size = size;
+    vq->queue_index = index;
 
-    // 1. Descriptor Table (Requires 16-byte alignment)
+    // Descriptor Table (16-byte aligned per spec)
     vq->desc = (struct virtq_desc *)base;
     base += sizeof(struct virtq_desc) * size;
 
-    // 2. Available Ring (Requires 2-byte alignment)
+    // Available Ring (2-byte aligned)
     vq->avail = (struct virtq_avail *)base;
-    base += sizeof(uint16_t) * (3 + size); // flags + idx + ring[size] + used_event
+    base += 2 + 2 + (sizeof(uint16_t) * size) + 2; 
 
-    // 3. Used Ring (Requires 4-byte alignment in VirtIO 1.0)
+    // Used Ring (4-byte aligned)
     base = (base + 3) & ~3; 
     vq->used = (struct virtq_used *)base;
 
-    // Initialize Free List
     vq->free_head = 0;
     vq->num_free = size;
+    
+    // Link the descriptors into a free list
     for (uint16_t i = 0; i < size - 1; i++) {
         vq->desc[i].next = i + 1;
     }
-
+    vq->desc[size - 1].next = 0xFFFF;
     vq->last_used_idx = 0;
 }
 
+/* ==========================================================================
+   virtqueue_add_descriptor: Grabs a descriptor from the free list
+   ========================================================================== */
 uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint32_t len, uint16_t flags) {
     if (vq->num_free == 0) return 0xFFFF;
 
@@ -46,7 +73,6 @@ uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint
     vq->free_head = desc->next;
     vq->num_free--;
 
-    // CRITICAL: Convert Virtual Address to Physical for the Hardware
     desc->addr  = get_phys((void*)virt_addr);
     desc->len   = len;
     desc->flags = flags;
@@ -55,39 +81,80 @@ uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint
     return head;
 }
 
-void virtqueue_notify(struct virtio_pci_device *vdev, uint16_t queue_index) {
-    // 1. Select the queue in common config to get its notification offset
-    vdev->common->queue_select = queue_index;
-    uint16_t notify_off = vdev->common->queue_notify_off;
-
-    // 2. Calculate the specific doorbell address
-    uintptr_t notify_addr = (uintptr_t)vdev->notify_base + (notify_off * vdev->notify_off_multiplier);
-
-    // 3. Ring the doorbell (write the queue index)
-    *(volatile uint16_t *)notify_addr = queue_index;
-}
-
-/* =========================
-   virtqueue_push_available
-   ========================= */
-
-void virtqueue_push_available(struct virtqueue *vq,
-                              struct virtio_pci_device *vdev,
-                              uint16_t queue_index,
-                              uint16_t desc_head)
-{
-    // Step 1: Get current index
+/* ==========================================================================
+   virtqueue_push_available: Publishes the descriptor to the hardware
+   Developer: Roheet Purkayastha
+   ========================================================================== */
+void virtqueue_push_available(struct virtio_pci_device *vdev, struct virtqueue *vq, uint16_t desc_head) {
     uint16_t idx = vq->avail->idx;
-
-    // Step 2: Place descriptor head into the ring
     vq->avail->ring[idx % vq->size] = desc_head;
 
-    // Step 3: Memory barrier before publishing
+    // Memory Barrier: Ensure the ring is updated before the index is incremented
     asm volatile("dsb sy" : : : "memory");
 
-    // Step 4: Increment available index
     vq->avail->idx = idx + 1;
 
-    // Step 5: Ring the doorbell
-    virtqueue_notify(vdev, queue_index);
+    // Notify the hardware to process the new buffer
+    virtqueue_notify(vdev, vq->queue_index);
+}
+
+/* ==========================================================================
+   virtio_pci_bind_queue: Registers the rings with the PCI device
+   Developer: Pritam Mondal
+   ========================================================================== */
+void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq) {
+    // Select the specific queue for programming
+    vdev->common->queue_select = vq->queue_index;
+
+    uint64_t desc_phys  = get_phys(vq->desc);
+    uint64_t avail_phys = get_phys(vq->avail);
+    uint64_t used_phys  = get_phys(vq->used);
+
+    uart_puts("[VIRTIO] Binding queue ");
+    uart_put_int(vq->queue_index);
+    uart_puts("\r\n");
+
+    // Program Physical Addresses into 32-bit registers (split Lo/Hi)
+    vdev->common->queue_desc_lo = (uint32_t)(desc_phys & 0xFFFFFFFF);
+    vdev->common->queue_desc_hi = (uint32_t)(desc_phys >> 32);
+
+    vdev->common->queue_avail_lo = (uint32_t)(avail_phys & 0xFFFFFFFF);
+    vdev->common->queue_avail_hi = (uint32_t)(avail_phys >> 32);
+
+    vdev->common->queue_used_lo = (uint32_t)(used_phys & 0xFFFFFFFF);
+    vdev->common->queue_used_hi = (uint32_t)(used_phys >> 32);
+
+    // Finalize the link
+    vdev->common->queue_enable = 1;
+    uart_puts("[VIRTIO] Queue enabled\r\n");
+}
+
+/* ==========================================================================
+   virtqueue_pop_used: Adrija's logic integrated into Aether Core.
+   Developer: Adrija Ghosh
+   ========================================================================== */
+int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
+    // 1. Check if hardware has processed anything (Volatile read)
+    if (vq->last_used_idx == *(volatile uint16_t *)&vq->used->idx) {
+        return -1; 
+    }
+
+    // Memory Barrier: Sync memory before reading descriptor data
+    asm volatile("dmb ish" : : : "memory");
+
+    // 2. Grab the receipt
+    struct virtq_used_elem *receipt = &vq->used->ring[vq->last_used_idx % vq->size];
+    uint16_t desc_id = (uint16_t)receipt->id;
+    
+    if (len_out) {
+        *len_out = receipt->len; 
+    }
+
+    // 3. Move counter and recycle descriptor
+    vq->last_used_idx++;
+    vq->desc[desc_id].next = vq->free_head;
+    vq->free_head = desc_id;
+    vq->num_free++;
+
+    return (int)desc_id;
 }
