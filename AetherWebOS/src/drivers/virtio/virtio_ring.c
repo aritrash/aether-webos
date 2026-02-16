@@ -126,3 +126,53 @@ void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq)
     vdev->common->queue_enable = 1;
     uart_puts("[VIRTIO] Queue enabled\r\n");
 }
+
+#include <stdint.h>
+
+struct virtq_used_elem {
+    uint32_t id;
+    uint32_t len;
+};
+
+struct virtq_desc {
+    uint32_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t next;
+};
+
+struct virtqueue {
+    uint16_t size;
+    uint16_t last_used_idx;
+    uint16_t free_head;
+    uint16_t num_free;
+
+    struct virtq_desc *desc;
+
+    struct {
+        uint16_t idx;
+        struct virtq_used_elem *ring;
+    } *used;
+};
+
+int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
+    // 1. Check if there is a new receipt from the hardware
+    if (vq->last_used_idx == *(volatile uint16_t *)&vq->used->idx) {
+        return -1; // No new packet yet
+    }
+
+    // 2. Grab the receipt from the used ring
+    struct virtq_used_elem *receipt = &vq->used->ring[vq->last_used_idx % vq->size];
+    uint16_t desc_id = (uint16_t)receipt->id;
+    *len_out = receipt->len; // Actual data length received
+
+    // 3. Move the internal counter forward
+    vq->last_used_idx++;
+
+    // 4. Free the descriptor so it can be reused
+    vq->desc[desc_id].next = vq->free_head;
+    vq->free_head = desc_id;
+    vq->num_free++;
+
+    return (int)desc_id;
+}
