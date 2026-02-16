@@ -62,7 +62,7 @@ void portal_render_terminal() {
     uint32_t sec = (uint32_t)(ms / 1000);
     uint32_t min = sec / 60;
     
-    uart_puts("[STATUS]  System Online\r\n");
+    uart_puts("[STATUS]  System Online   \r\n");
     
     uart_puts("[UPTIME]  ");
     uart_put_int(min);
@@ -70,13 +70,13 @@ void portal_render_terminal() {
     uart_put_int(sec % 60);
     uart_puts("s ");
     uart_put_int(ms % 1000);
-    uart_puts("ms\r\n");
+    uart_puts("ms  \r\n");
 
     uart_puts("[MEMORY]  Heap: ");
     uart_put_int(HEAP_SIZE / 1024 / 1024);
     uart_puts(" MB | Used: ");
     uart_put_int(current_state.heap_usage_kb);
-    uart_puts(" KB\r\n");
+    uart_puts(" KB  \r\n");
 
     uart_puts("[NETWORK] Link: ");
     if (global_vnet_dev) {
@@ -86,6 +86,7 @@ void portal_render_terminal() {
                 uart_put_hex_byte(global_vnet_dev->device->mac[i]); 
                 if(i < 5) uart_putc(':');
             }
+            uart_puts("  ");
         } else {
             uart_puts("MAPPING...");
         }
