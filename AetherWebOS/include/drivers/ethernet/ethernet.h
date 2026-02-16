@@ -7,24 +7,34 @@
 #define ETH_TYPE_ARP  0x0806
 #define ETH_ADDR_LEN  6
 
-/**
- * struct eth_header - Standard Ethernet II Header
- * We use __attribute__((packed)) to ensure the 14-byte size is exact.
- */
+
+/* =====================================================
+   Ethernet Header
+   ===================================================== */
+
 struct eth_header {
     uint8_t  dest_mac[ETH_ADDR_LEN];
     uint8_t  src_mac[ETH_ADDR_LEN];
-    uint16_t ethertype; // Note: This arrives in Big-Endian (Network Byte Order)
+    uint16_t ethertype; // Big-Endian
 } __attribute__((packed));
 
-/**
- * swap_uint16: Necessary for AArch64 (Little-Endian) to handle 
- * Network Byte Order (Big-Endian).
- */
+
+/* =====================================================
+   Byte Order Helpers
+   ===================================================== */
+
 static inline uint16_t ntohs(uint16_t val) {
     return (uint16_t)((val << 8) | (val >> 8));
 }
 
 #define htons(x) ntohs(x)
+
+
+/* =====================================================
+   Ethernet API (IMPORTANT)
+   ===================================================== */
+
+void ethernet_handle_packet(uint8_t *data, uint32_t len);
+
 
 #endif
