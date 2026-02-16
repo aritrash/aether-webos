@@ -71,7 +71,7 @@ void portal_render_terminal() {
     uart_puts("\033[H"); 
     
     uart_puts("===========================================\r\n");
-    uart_puts("         AETHER WebOS :: Portal v0.1.3     \r\n");
+    uart_puts("         AETHER WebOS :: Portal v0.1.4     \r\n");
     uart_puts("===========================================\r\n");
     
     uint64_t ms = current_state.uptime_ms;

@@ -38,7 +38,7 @@ void kernel_main() {
 
     uart_puts("\r\n[INFO] Kernel Loaded at: ");
     uart_put_hex((uint64_t)&kernel_main);
-    uart_puts("\r\n[OK] Aether Core Online.");
+    uart_puts("\r\n[OK] Aether Core Online.\r\n");
 
     // 2. Fundamental Setup
     exceptions_init();
