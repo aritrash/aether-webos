@@ -11,6 +11,13 @@ void* memset(void* s, int c, size_t n) {
     return s;
 }
 
+void *memcpy(void *dest, const void *src, size_t n) {
+    char *d = dest;
+    const char *s = src;
+    while (n--) *d++ = *s++;
+    return dest;
+}
+
 void str_clear(char* str) {
     if (str) str[0] = '\0';
 }
@@ -51,4 +58,50 @@ void str_append_kv_int(char* str, const char* key, uint64_t value) {
     
     str_append(str, buf);
     str_append(str, ","); 
+}
+
+// helper to convert long to string
+extern char* ltoa(unsigned long num, char* str) {
+    char* p = str;
+    unsigned long tmp = num;
+    
+    // Calculate length
+    do {
+        p++;
+        tmp /= 10;
+    } while (tmp);
+    
+    char* end = p;
+    *p-- = '\0';
+    
+    // Fill digits backward
+    do {
+        *p-- = (num % 10) + '0';
+        num /= 10;
+    } while (num);
+    
+    return end; // returns pointer to null terminator
+}
+
+// Minimal sprintf supporting only %lu and strings
+void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsigned long err, unsigned long buf) {
+    char* p = out;
+    
+    // Hardcoded JSON structure for speed and safety
+    char* parts[] = {"{\"rx\": ", ", \"tx\": ", ", \"err\": ", ", \"buf\": ", "}"};
+    
+    unsigned long values[] = {rx, tx, err, buf};
+    
+    for(int i = 0; i < 4; i++) {
+        // Copy label
+        char* l = parts[i];
+        while(*l) *p++ = *l++;
+        // Copy value
+        p = ltoa(values[i], p);
+    }
+    
+    // Final closing brace
+    char* last = parts[4];
+    while(*last) *p++ = *last++;
+    *p = '\0';
 }

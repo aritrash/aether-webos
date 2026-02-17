@@ -2,6 +2,7 @@
 #define UART_H
 
 #include "config.h"
+#include <stdint.h>
 
 /* * The UART0_BASE is now defined in config.h based on the BOARD flag.
  * RPi4: 0xFE201000
@@ -39,5 +40,7 @@ void uart_putc(unsigned char c);
 void uart_puts(const char* str);
 unsigned char uart_getc();
 int uart_is_writable(void);
+int uart_is_empty();
+void uart_print_hex16(uint16_t val);
 
 #endif

@@ -28,4 +28,8 @@ void str_append_kv_int(char* str, const char* key, uint64_t value);
                   (((x) & 0x0000FF00) << 8) | ((x) << 24))
 #define htonl(x) ntohl(x)
 
+void *memcpy(void *dest, const void *src, size_t n);
+void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsigned long err, unsigned long buf);
+extern char* ltoa(unsigned long num, char* str);
+
 #endif
