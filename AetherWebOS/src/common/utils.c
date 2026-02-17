@@ -84,24 +84,29 @@ extern char* ltoa(unsigned long num, char* str) {
 }
 
 // Minimal sprintf supporting only %lu and strings
-void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsigned long err, unsigned long buf) {
+void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsigned long err, 
+                            unsigned long buf, unsigned long tcp, unsigned long rexmit, 
+                            unsigned long cksum) {
     char* p = out;
-    
-    // Hardcoded JSON structure for speed and safety
-    char* parts[] = {"{\"rx\": ", ", \"tx\": ", ", \"err\": ", ", \"buf\": ", "}"};
-    
-    unsigned long values[] = {rx, tx, err, buf};
-    
-    for(int i = 0; i < 4; i++) {
-        // Copy label
-        char* l = parts[i];
-        while(*l) *p++ = *l++;
-        // Copy value
+    // Task: JSON Expansion with new keys
+    char* keys[] = {"{\"rx\":", ",\"tx\":", ",\"err\":", ",\"buf\":", 
+                    ",\"tcp_active\":", ",\"retransmissions\":", ",\"checksum_err\":"};
+    unsigned long values[] = {rx, tx, err, buf, tcp, rexmit, cksum};
+
+    for(int i = 0; i < 7; i++) {
+        char* k = keys[i];
+        while(*k) *p++ = *k++;
         p = ltoa(values[i], p);
     }
-    
-    // Final closing brace
-    char* last = parts[4];
-    while(*last) *p++ = *last++;
+    *p++ = '}';
     *p = '\0';
+}
+
+void uart_put_ip(uint32_t ip) {
+    // Suppress unused variable warnings by commenting them out or using them
+    for (int i = 3; i >= 0; i--) {
+        // uint8_t octet = (ip >> (i * 8)) & 0xFF;
+        // itoa logic would go here
+        (void)ip; // Temporary suppression
+    }
 }

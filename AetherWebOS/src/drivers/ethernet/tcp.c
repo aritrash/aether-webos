@@ -1,9 +1,16 @@
 #include "drivers/ethernet/tcp.h"
-#include "drivers/ethernet/tcp_state.h" // Aritrash's state machine
 #include "drivers/ethernet/ipv4.h"
 #include "utils.h"
 #include "kernel/timer.h"
 #include "drivers/uart.h"
+
+/* =====================================================
+   TCP Logic Implementation
+   Changes: 
+   - Uses unified TCB and Enum from tcp.h (which includes tcp_state.h).
+   - Suppresses 'reply' variable warning until send logic is linked.
+   - Updates 'last_activity' for Health Watchdog.
+   ===================================================== */
 
 void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_ip) {
     if (len < sizeof(struct tcp_header)) return;
@@ -18,8 +25,7 @@ void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_i
 
     // 2. Handle NEW connection (SYN)
     if ((tcp->flags & TCP_SYN) && !tcb) {
-        // Only allocate if we are listening on this port (Adrija's check)
-        // For now, we'll assume Port 80 is always open
+        // Only allocate if we are listening on this port (Port 80 assumed open)
         if (dest_port == 80) {
             tcb = tcp_allocate_tcb();
             if (!tcb) return;
@@ -29,7 +35,10 @@ void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_i
             tcb->local_port = dest_port;
             tcb->rcv_nxt = incoming_seq + 1; // Expecting their next byte
             tcb->state = TCP_SYN_RCVD;
-            tcb->last_activity = get_system_uptime_ms();  // <-- ADDED LINE
+            
+            /* Task: Timeout Watchdog
+               Initialize the timestamp so health.c can track its age. */
+            tcb->last_activity = get_system_uptime_ms(); 
 
             // 3. Prepare SYN-ACK Response
             struct tcp_header reply;
@@ -46,18 +55,22 @@ void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_i
             // Increment our sequence number for the SYN we just sent
             tcb->snd_nxt++;
 
-            /* * IMPORTANT: Pass to Pritam's upcoming checksum logic 
-             * and then to IPv4 send.
+            /* * IMPORTANT: The 'reply' variable is cast to void to prevent 
+             * 'set but not used' warnings until the send implementation is ready.
              */
+            (void)reply; 
+            
+            // TODO: Hand over to Pritam's checksum logic and IPv4 send.
             // tcp_send_packet(tcb, &reply, sizeof(reply), NULL, 0);
             
-            uart_puts("[TCP] SYN-ACK sent to ");
-            // uart_put_ip(src_ip); // If you have this helper
-            uart_puts("\r\n");
+            uart_puts("[TCP] SYN-ACK prepared for remote client.\r\n");
         }
     } 
     // 4. Handle established connection or final ACK
     else if (tcb) {
+        /* Refresh watchdog timestamp for every valid packet received */
+        tcb->last_activity = get_system_uptime_ms();
+        
         tcp_state_transition(tcb, tcp->flags);
     }
 }
