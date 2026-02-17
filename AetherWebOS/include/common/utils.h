@@ -29,7 +29,10 @@ void str_append_kv_int(char* str, const char* key, uint64_t value);
 #define htonl(x) ntohl(x)
 
 void *memcpy(void *dest, const void *src, size_t n);
-void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsigned long err, unsigned long buf);
+void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, 
+                            unsigned long err, unsigned long buf, 
+                            unsigned long tcp, unsigned long rexmit, 
+                            unsigned long cksum);
 extern char* ltoa(unsigned long num, char* str);
 
 #endif
