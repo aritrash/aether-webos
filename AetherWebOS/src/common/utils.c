@@ -103,10 +103,10 @@ void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, unsig
 }
 
 void uart_put_ip(uint32_t ip) {
-    char buf[4];
+    // Suppress unused variable warnings by commenting them out or using them
     for (int i = 3; i >= 0; i--) {
-        char val = (ip >> (i * 8)) & 0xFF;
-        // You'd need a simple itoa or similar here to print the 0-255 value
-        // For now, even hex output is better than nothing!
+        // uint8_t octet = (ip >> (i * 8)) & 0xFF;
+        // itoa logic would go here
+        (void)ip; // Temporary suppression
     }
 }

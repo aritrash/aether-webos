@@ -6,9 +6,10 @@
 
 /* =====================================================
    TCP Logic Implementation
-   Changes: - Removed conflicting tcp_state.h.
-            - Integrated last_activity for health watchdog.
-            - Unified state usage (TCP_SYN_RCVD).
+   Changes: 
+   - Uses unified TCB and Enum from tcp.h (which includes tcp_state.h).
+   - Suppresses 'reply' variable warning until send logic is linked.
+   - Updates 'last_activity' for Health Watchdog.
    ===================================================== */
 
 void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_ip) {
@@ -54,12 +55,15 @@ void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_i
             // Increment our sequence number for the SYN we just sent
             tcb->snd_nxt++;
 
-            /* * IMPORTANT: Hand over to Pritam's upcoming checksum logic 
-             * and then to IPv4 send.
+            /* * IMPORTANT: The 'reply' variable is cast to void to prevent 
+             * 'set but not used' warnings until the send implementation is ready.
              */
+            (void)reply; 
+            
+            // TODO: Hand over to Pritam's checksum logic and IPv4 send.
             // tcp_send_packet(tcb, &reply, sizeof(reply), NULL, 0);
             
-            uart_puts("[TCP] SYN-ACK sent to remote client.\r\n");
+            uart_puts("[TCP] SYN-ACK prepared for remote client.\r\n");
         }
     } 
     // 4. Handle established connection or final ACK
