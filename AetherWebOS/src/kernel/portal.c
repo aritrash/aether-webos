@@ -6,12 +6,23 @@
 #include "kernel/memory.h"
 #include "config.h"        
 #include "utils.h"
+#include "kernel/health.h"
+#include "drivers/ethernet/tcp_state.h"
 
 extern struct virtio_pci_device *global_vnet_dev;
+extern void print_ipv6(uint8_t addr[16]);
+extern uint32_t aether_ip;
 
 static portal_state_t current_state;
 static char json_buffer[1024]; // Increased for more detailed telemetry
 static int portal_active = 0; 
+
+void uart_print_ip(uint32_t ip) {
+    for (int i = 0; i < 4; i++) {
+        uart_put_int((ip >> (i * 8)) & 0xFF);
+        if (i < 3) uart_putc('.');
+    }
+}
 
 /* Helper to convert byte to hex for UART display */
 void uart_put_hex_byte(uint8_t byte) {
@@ -25,9 +36,12 @@ void portal_refresh_state() {
     current_state.heap_usage_kb = get_heap_usage() / 1024;
     current_state.device_count = get_total_pci_devices();
 
+    // Pull real-time networking stats from Ankana's module
+    current_state.packets_rx = global_net_stats.rx_packets;
+    current_state.packets_tx = global_net_stats.tx_packets;
+
     if (global_vnet_dev && global_vnet_dev->device) {
         current_state.link_status = 1;
-        // Sync hardware MAC to portal state for JSON export
         for(int i = 0; i < 6; i++) {
             current_state.mac[i] = global_vnet_dev->device->mac[i];
         }
@@ -93,40 +107,76 @@ void portal_render_confirm_prompt() {
 }
 
 /**
- * portal_render_loading: Renders a BIOS-style progress bar.
+ * portal_render_net_dashboard: Native Network Dashboard (v0.1.6)
+ * Replaces the old Setup Wizard. Provides real-time L2/L3 telemetry.
  */
-void portal_render_loading() {
-    uart_puts("\r\n ACTIVATING BRIDGE: [");
-    for (int i = 0; i < 20; i++) {
-        uart_puts("#"); // Filling the bar
-        // Delay to simulate work (Approx 50ms)
-        for (volatile int d = 0; d < 1000000; d++); 
-    }
-    uart_puts("] 100%\r\n");
-    uart_puts(" [OK] Bridge Hot. Signal sent to Host.\r\n");
-    for (volatile int d = 0; d < 5000000; d++); // Pause to show success
-}
+void portal_render_net_dashboard() {
+    if (!portal_active) return;
 
-/**
- * portal_render_wizard: The "AetherServer Setup Wizard" (F10)
- */
-void portal_render_wizard() {
-    uart_puts("\033[1;2H\033[1;37;44m"); // Bold White on Red
+    uart_puts("\033[H"); // Home cursor
+    
+    // Header Block
+    uart_puts("\033[1;37;44m"); // White text on Blue background
     uart_puts("#################################################\r\n");
-    uart_puts("\033[2;2H#                                               #\r\n");
-    uart_puts("\033[3;2H#       AETHER SERVER SETUP WIZARD v0.1.4       #\r\n");
-    uart_puts("\033[4;2H#                                               #\r\n");
-    uart_puts("\033[5;2H#################################################\r\n\033[0m");
+    uart_puts("#           AETHER NETWORK DASHBOARD            #\r\n");
+    uart_puts("#################################################\r\n\033[0m");
     
-    uart_puts(" This wizard will bridge your AArch64 Kernel to\r\n");
-    uart_puts(" the Aether WebOS via WebSocket (Port 8080).\r\n\r\n");
+    // 1. Physical & Link Layer
+    uart_puts("\r\n [LINK LAYER]   \r\n");
+    uart_puts("  - Interface: eth0 (VirtIO-Net-PCI)   \r\n");
+    uart_puts("  - Status:    ");
+    if (current_state.link_status) {
+        uart_puts("\033[32mUP (10Gbps Full-Duplex)   \033[0m\r\n");
+    } else {
+        uart_puts("\033[31mDOWN / NO CARRIER\033[0m\r\n");
+    }
+
+    uart_puts("  - MAC:       ");
+    for(int i = 0; i < 6; i++) {
+        uart_put_hex_byte(current_state.mac[i]); 
+        if(i < 5) uart_putc(':');
+    }
+    uart_puts("   \r\n");
+
+    // 2. Network Layer (L3) - THE REAL DEALS
+    uart_puts("\r\n [NETWORK LAYER]   \r\n");
     
-    uart_puts(" [INFO] Host TCP Link: 127.0.0.1:1234\r\n");
-    uart_puts(" [INFO] Protocol: AetherData/v1\r\n\r\n");
+    uart_puts("  - IPv4 Addr: ");
+    uart_print_ip(aether_ip); 
+    uart_puts(" (Static)   \r\n");
+
+    uart_puts("  - IPv6 Addr: ");
+    // Generate the Link-Local address from the MAC if you want to be fancy,
+    // but for now, we'll let Adrija's printer handle a standard LL address array
+    uint8_t local_ipv6[16] = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 
+                              0x52, 0x54, 0x00, 0xff, 0xfe, 0x12, 0x34, 0x56};
+    print_ipv6(local_ipv6); 
+    uart_puts(" (Link-Local)   \r\n");
+
+    // 3. Traffic Statistics (Ankana's Health Stats)
+    uart_puts("\r\n [TRAFFIC STATS]   \r\n");
+    uart_puts("  - RX Frames: "); 
+    uart_put_int(global_net_stats.rx_packets);
+    uart_puts("   ");
+    uart_puts("\r\n  - TX Frames: "); 
+    uart_put_int(global_net_stats.tx_packets);
+    uart_puts("   ");
+    uart_puts("\r\n  - Collisions/Drops: "); 
+    uart_put_int(global_net_stats.dropped_packets);
+    uart_puts("   ");
+    uart_puts("\r\n  - Mem Buffers: ");
+    uart_put_int(global_net_stats.buffer_usage); // Tracks how many kmalloc'd buffers are active
+    uart_puts("   \r\n");
+
+    // 4. Transport Layer (L4)
+    uart_puts("\r\n [TRANSPORT LAYER]\r\n");
+    uart_puts("  - TCP Listeners: Port 80 (HTTP)  \r\n");
+    uart_puts("  - Active TCBs:   ");
+    uart_put_int(tcp_get_active_count()); // REAL DATA HOOKED UP!
+    uart_puts("   \r\n");
     
-    uart_puts(" Press [ENTER] to START AetherBridge\r\n");
-    uart_puts(" Press [ESC] to CANCEL\r\n\r\n");
-    uart_puts("-------------------------------------------------\r\n");
+    uart_puts("\r\n\r\n-------------------------------------------------\r\n");
+    uart_puts(" [ESC] Main Portal  |  [ENTER] Refresh           \r\n");
 }
 
 void portal_render_terminal() {
@@ -135,7 +185,7 @@ void portal_render_terminal() {
     uart_puts("\033[H"); // Reset cursor to 0,0
     
     uart_puts("===========================================\r\n");
-    uart_puts("         AETHER WebOS :: Portal v0.1.4     \r\n");
+    uart_puts("         AETHER WebOS :: Portal v0.1.6     \r\n");
     uart_puts("===========================================\r\n");
     
     uint64_t ms = current_state.uptime_ms;

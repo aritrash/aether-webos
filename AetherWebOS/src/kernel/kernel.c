@@ -8,145 +8,191 @@
 #include "drivers/usb/xhci.h"
 #include "portal.h"
 #include "psci.h"
-#include "drivers/virtio/virtio_pci.h"
 
-// System Modes for UI Arbiter
+#include "drivers/virtio/virtio_pci.h"
+#include "drivers/virtio/virtio_net.h"
+
+/* =====================================================
+   System Modes for UI Arbiter
+   Lead Developer: Aritrash Sarkar
+   Changes: - Cleaned up v0.1.5 bridge legacy code.
+            - Replaced Setup Wizard with Network Dashboard (F10).
+            - Native Network Polling active for TCP stack.
+    Date: 17.02.2026
+   ===================================================== */
+
+// Define the Aether OS Network Identity
+uint8_t aether_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}; 
+uint32_t aether_ip = 0x0F02000A;
+
 typedef enum {
     MODE_PORTAL,
     MODE_CONFIRM_SHUTDOWN,
-    MODE_SETUP_WIZARD
+    MODE_NET_STATS
 } kernel_mode_t;
 
 static kernel_mode_t current_mode = MODE_PORTAL;
 
+/* =====================================================
+   External Symbols
+   ===================================================== */
 extern void exceptions_init(void);
-extern void enable_interrupts(void); 
+extern void enable_interrupts(void);
 extern char _binary_assets_banner_txt_start[];
 extern char _binary_assets_banner_txt_end[];
 
+/* Global VirtIO-Net device (from PCI probe) */
+extern struct virtio_pci_device *global_vnet_dev;
+
+/* =====================================================
+   Prototypes
+   ===================================================== */
 void kernel_shutdown(void);
 
-void kernel_main() {
+/* =====================================================
+   Kernel Entry
+   ===================================================== */
+void kernel_main(void)
+{
     uart_init();
 
-    // 1. Splash & Identity
-    char* banner = _binary_assets_banner_txt_start;
-    char* banner_end = _binary_assets_banner_txt_end;
+    /* 1. Splash Screen */
+    char *banner = _binary_assets_banner_txt_start;
+    char *banner_end = _binary_assets_banner_txt_end;
+
     while (banner < banner_end) {
-        if (*banner == '\n') uart_putc('\r');
+        if (*banner == '\n')
+            uart_putc('\r');
         uart_putc(*banner);
         banner++;
     }
 
     uart_puts("\r\n[OK] Aether Core Online.\r\n");
 
-    // 2. Fundamental Setup
+    /* 2. Core Subsystems */
     exceptions_init();
-    mmu_init(); 
+    mmu_init();
     kmalloc_init();
     pcie_init();
     gic_init();
     timer_init();
     enable_interrupts();
 
+    /* 3. Portal Start */
     uint64_t last_refresh = 0;
     int esc_state = 0;
-    portal_start(); 
+    portal_start();
 
-    while(1) {
+    /* 4. Main Loop */
+    while (1) {
         uint64_t current_time = get_system_uptime_ms();
 
-        // --- 1. UI RENDER ARBITER (10 FPS) ---
+        /* UI RENDER (10 FPS) */
         if (current_time - last_refresh >= 100) {
             if (uart_is_writable()) {
                 portal_refresh_state();
-                
-                switch(current_mode) {
+
+                switch (current_mode) {
                     case MODE_CONFIRM_SHUTDOWN:
-                        portal_render_confirm_prompt(); 
+                        portal_render_confirm_prompt();
                         break;
-                    case MODE_SETUP_WIZARD:
-                        portal_render_wizard();
+
+                    case MODE_NET_STATS:
+                        portal_render_net_dashboard(); // Updated from Wizard
                         break;
+
                     case MODE_PORTAL:
                     default:
-                        portal_render_terminal(); 
+                        portal_render_terminal();
                         break;
                 }
                 last_refresh = current_time;
             }
         }
 
-        // --- 2. INPUT HANDLING STATE MACHINE ---
-        if (!(*UART0_FR & (1 << 4))) { 
+        /* INPUT HANDLING */
+        if (!(*UART0_FR & (1 << 4))) {
             unsigned char c = uart_getc();
 
-            // Handling Esc Sequences (F-Keys)
-            if (c == 0x1B) { esc_state = 1; continue; }
-            if (esc_state == 1 && c == '[') { esc_state = 2; continue; }
-            
+            /* Escape handling (F-Keys) */
+            if (c == 0x1B) {
+                if (uart_is_empty()) { 
+                    current_mode = MODE_PORTAL; // Back to safety
+                    esc_state = 0;
+                    uart_puts("\033[2J\033[H");
+                    continue;
+                }
+                esc_state = 1;
+                continue;
+            }
+            if (esc_state == 1 && c == '[') {
+                esc_state = 2;
+                continue;
+            }
             if (esc_state == 2) {
-                // Sequence Detection Logic
-                if (c == '1') esc_state = 3; // F7 or F10 prefix
-                else if (c == '2') esc_state = 10; // F10 specific prefix [21~
+                if (c == '1') esc_state = 3;      // Prep for F7/F8
+                else if (c == '2') esc_state = 10; // Prep for F10
                 else esc_state = 0;
                 continue;
             }
 
-            // F7 Sequence Detection (Shutdown)
+            /* F8 = Shutdown Mode */
             if (esc_state == 3 && c == '8') {
+                uart_puts("\033[2J\033[H");
                 current_mode = MODE_CONFIRM_SHUTDOWN;
                 esc_state = 0;
                 continue;
             }
 
-            // F10 Sequence Detection (Setup Wizard)
+            /* F10 = Network Dashboard */
             if (esc_state == 10 && c == '1') {
-                current_mode = MODE_SETUP_WIZARD;
+                uart_puts("\033[2J\033[H");
+                current_mode = MODE_NET_STATS;
                 esc_state = 0;
                 continue;
             }
 
-            // Mode-Specific Key Handling (Enter / Escape)
+            /* General Mode Interaction */
             if (current_mode == MODE_CONFIRM_SHUTDOWN) {
                 if (c == '\r' || c == '\n') kernel_shutdown();
-                if (c == 0x1B) current_mode = MODE_PORTAL; 
-            } 
-            else if (current_mode == MODE_SETUP_WIZARD) {
-                if (c == '\r' || c == '\n') {
-                    // 1. Show the BIOS-style loading animation
-                    portal_render_loading();
-                    
-                    // 2. Fire the activation string to the Python Bridge
-                    uart_puts("CMD_START_BRIDGE\r\n");
-                    
-                    // 3. Return to the main Portal
-                    current_mode = MODE_PORTAL;
-                }
                 if (c == 0x1B) current_mode = MODE_PORTAL;
-                uart_puts("\033[2J\033[H");
             }
-
-            esc_state = 0; // Reset state machine
+            else if (current_mode == MODE_NET_STATS) {
+                // Press Enter or ESC to leave dashboard
+                if (c == '\r' || c == '\n' || c == 0x1B) {
+                    current_mode = MODE_PORTAL;
+                    uart_puts("\033[2J\033[H"); // Clear screen for Portal
+                }
+            }
+            esc_state = 0;
         }
 
-        asm volatile("wfi"); 
+        /* NETWORK POLLING & REAPING */
+        if (global_vnet_dev) {
+            virtio_net_poll(global_vnet_dev);
+            net_tx_reaper(); // Important to reclaim TX memory
+        }
+
+        /* Sleep until next timer tick or packet IRQ */
+        asm volatile("wfi");
     }
 }
 
-void kernel_shutdown() {
-    uart_puts("\033[2J\033[H"); 
+void kernel_shutdown(void)
+{
+    uart_puts("\033[2J\033[H");
     uart_puts("===========================================\r\n");
-    uart_puts("       AETHER WebOS :: SYSTEM HALTING      \r\n");
+    uart_puts("       AETHER WebOS :: SYSTEM HALTING       \r\n");
     uart_puts("===========================================\r\n");
 
-    asm volatile("msr daifset, #2"); 
-    
+    asm volatile("msr daifset, #2");
+
     if (global_vnet_dev) {
         virtio_pci_reset(global_vnet_dev);
     }
 
     uart_puts("[INFO] Aether Core: Shutdown Complete.\r\n");
     psci_system_off();
-    while(1) { asm volatile("wfi"); }
+
+    while (1) { asm volatile("wfi"); }
 }

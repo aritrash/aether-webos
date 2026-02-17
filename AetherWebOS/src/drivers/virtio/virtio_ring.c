@@ -1,6 +1,7 @@
 #include "drivers/virtio/virtio_ring.h"
 #include "drivers/virtio/virtio_pci.h"
 #include "drivers/virtio/virtio_net.h"
+#include "kernel/health.h"
 #include "kernel/memory.h"
 #include "drivers/uart.h"
 #include "utils.h"
@@ -73,6 +74,8 @@ uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint
     vq->free_head = desc->next;
     vq->num_free--;
 
+    global_net_stats.buffer_usage++; // <--- YOUR HOOK
+
     desc->addr  = get_phys((void*)virt_addr);
     desc->len   = len;
     desc->flags = flags;
@@ -133,16 +136,17 @@ void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq)
    virtqueue_pop_used: Adrija's logic integrated into Aether Core.
    Developer: Adrija Ghosh
    ========================================================================== */
+
 int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
-    // 1. Check if hardware has processed anything (Volatile read)
+    // 1. Check if hardware has processed anything
     if (vq->last_used_idx == *(volatile uint16_t *)&vq->used->idx) {
         return -1; 
     }
 
-    // Memory Barrier: Sync memory before reading descriptor data
+    // Memory Barrier: Ensure we see what the hardware wrote
     asm volatile("dmb ish" : : : "memory");
 
-    // 2. Grab the receipt
+    // 2. Grab the "receipt" from the hardware
     struct virtq_used_elem *receipt = &vq->used->ring[vq->last_used_idx % vq->size];
     uint16_t desc_id = (uint16_t)receipt->id;
     
@@ -150,7 +154,17 @@ int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
         *len_out = receipt->len; 
     }
 
-    // 3. Move counter and recycle descriptor
+    // 3. YOUR TELEMETRY HOOKS
+    global_net_stats.buffer_usage--; 
+    
+    // Logic to distinguish RX (usually queue 0) from TX (usually queue 1)
+    if (vq->queue_index == 0) {
+        global_net_stats.rx_packets++;
+    } else if (vq->queue_index == 1) {
+        global_net_stats.tx_packets++;
+    }
+
+    // 4. Move counter and recycle the descriptor back to the free list
     vq->last_used_idx++;
     vq->desc[desc_id].next = vq->free_head;
     vq->free_head = desc_id;

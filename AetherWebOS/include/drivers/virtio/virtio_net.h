@@ -56,4 +56,22 @@ struct virtio_pci_device;
 void virtio_pci_init(uint32_t bus, uint32_t dev, uint32_t func);
 void virtio_net_init(struct virtio_pci_device *vdev);
 
+/* Network polling */
+void virtio_net_poll(struct virtio_pci_device *vdev);
+
+// include/drivers/virtio/virtio_net.h
+struct virtio_net_hdr {
+    uint8_t flags;
+    uint8_t gso_type;
+    uint16_t hdr_len;
+    uint16_t gso_size;
+    uint16_t csum_start;
+    uint16_t csum_offset;
+    // uint16_t num_buffers; // Only if VIRTIO_F_MRG_RXBUF is negotiated
+} __attribute__((packed));
+
+typedef struct virtio_net_hdr virtio_net_rx_hdr_t;
+typedef struct virtio_net_hdr virtio_net_tx_hdr_t;
+void net_tx_reaper();
+
 #endif
