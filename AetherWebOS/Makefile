@@ -80,5 +80,6 @@ run: all
 	$(QEMU_SERIAL) $(QEMU_EXTRA) \
 	-device qemu-xhci,p2=15,p3=15 \
 	-device usb-tablet \
-	-netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+	-netdev user,id=net0,hostfwd=tcp::8080-:80 \
+	-device virtio-net-pci,netdev=net0 \
 	-kernel kernel8.img

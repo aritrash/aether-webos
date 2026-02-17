@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "kernel/health.h"
 #include "drivers/ethernet/tcp_state.h"
+#include "uart.h"
 
 extern struct virtio_pci_device *global_vnet_dev;
 extern void print_ipv6(uint8_t addr[16]);
@@ -16,20 +17,6 @@ extern uint32_t aether_ip;
 static portal_state_t current_state;
 static char json_buffer[1024]; // Increased for more detailed telemetry
 static int portal_active = 0; 
-
-void uart_print_ip(uint32_t ip) {
-    for (int i = 0; i < 4; i++) {
-        uart_put_int((ip >> (i * 8)) & 0xFF);
-        if (i < 3) uart_putc('.');
-    }
-}
-
-/* Helper to convert byte to hex for UART display */
-void uart_put_hex_byte(uint8_t byte) {
-    const char *hex = "0123456789ABCDEF";
-    uart_putc(hex[(byte >> 4) & 0xF]);
-    uart_putc(hex[byte & 0xF]);
-}
 
 void portal_refresh_state() {
     current_state.uptime_ms = get_system_uptime_ms();
