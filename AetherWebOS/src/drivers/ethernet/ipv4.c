@@ -1,8 +1,10 @@
 #include "drivers/ethernet/ipv4.h"
 #include "drivers/uart.h"
-#include "common/utils.h"   // ntohs(), htons(), ntohl()
+#include "common/utils.h"        // ntohs(), htons(), ntohl()
+#include "kernel/health.h"       // <-- For health_report_checksum_error()
 
-/* Our OS IP: 10.0.0.2 (Change later if needed) */
+
+/* Our OS IP: 10.0.0.2 */
 #define AETHER_IP  0x0A000002
 
 
@@ -25,12 +27,12 @@ uint16_t ipv4_checksum(void *data, size_t len)
         len -= 2;
     }
 
-    /* Handle odd remaining byte */
+    /* Handle odd byte */
     if (len) {
         sum += (*(uint8_t *)ptr) << 8;
     }
 
-    /* Fold 32-bit sum to 16 bits */
+    /* Fold to 16 bits */
     while (sum >> 16) {
         sum = (sum & 0xFFFF) + (sum >> 16);
     }
@@ -84,6 +86,10 @@ void ipv4_handle(uint8_t *data, uint32_t len)
 
     if (calc != old_sum) {
         uart_puts("[IP] Bad checksum. Dropped\r\n");
+
+        /* Health monitor hook */
+        health_report_checksum_error();
+
         return;
     }
 
