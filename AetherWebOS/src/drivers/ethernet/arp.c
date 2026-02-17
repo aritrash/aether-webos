@@ -1,7 +1,7 @@
-#include "net/arp.h"
+#include "ethernet/arp.h"
 #include "drivers/virtio/virtio_net.h"
-#include "net/ethernet.h"
-#include "kernel/string.h"
+#include "ethernet/ethernet.h"
+#include "common/utils.h"
 
 #define ARP_CACHE_SIZE 4
 

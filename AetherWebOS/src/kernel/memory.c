@@ -21,27 +21,59 @@ void kmalloc_init() {
     uart_puts("[OK] Memory Subsystem: Online (Expanded L3 Support Active).\r\n");
 }
 
-/**
- * Standard Heap Allocator
- * Used for kernel structures (vdev, structures, etc.)
- */
+static mem_header_t *free_list = NULL;
+
 void* kmalloc(size_t size) {
-    // 8-byte alignment
+    // 1. 8-byte alignment
     size = (size + 7) & ~7;
 
-    if (heap_ptr + size > HEAP_START + HEAP_SIZE) {
-        uart_puts("[ERROR] kmalloc: Kernel Heap Exhausted!\r\n");
+    // 2. Search the free list for a reusable block
+    mem_header_t *current = free_list;
+    while (current) {
+        if (current->is_free && current->size >= size) {
+            current->is_free = 0;
+            // Return pointer just after the header
+            return (void*)(current + 1);
+        }
+        current = current->next;
+    }
+
+    // 3. No free block found? Bump the heap_ptr (Your original logic)
+    size_t total_size = sizeof(mem_header_t) + size;
+    if (heap_ptr + total_size > HEAP_START + HEAP_SIZE) {
+        uart_puts("[ERROR] kmalloc: Heap Exhausted!\r\n");
         return NULL;
     }
 
-    void* ptr = (void*)heap_ptr;
-    heap_ptr += size;
-    return ptr;
+    mem_header_t *header = (mem_header_t*)heap_ptr;
+    header->size = size;
+    header->is_free = 0;
+    header->next = free_list;
+    free_list = header;
+
+    heap_ptr += total_size;
+    
+    // Return the memory address after the header
+    return (void*)(header + 1);
+}
+
+void kfree(void* ptr) {
+    if (!ptr) return;
+
+    // The header is located just before the data pointer
+    mem_header_t *header = (mem_header_t*)ptr - 1;
+    
+    // Mark as free so kmalloc can reuse it
+    header->is_free = 1;
+
+    // Optional: Coalescing (merging adjacent free blocks) could be added 
+    // here later to prevent fragmentation as the stack grows.
 }
 
 /**
  * Virtual Memory Allocator
  * reserves address space in the 0x80000000 range for MMIO
+ * Developer: Adrija Ghosh
  */
 void* vmalloc(size_t size) {
     // Always align allocation to page boundaries
