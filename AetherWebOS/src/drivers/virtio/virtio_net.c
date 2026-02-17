@@ -6,6 +6,8 @@
 #include "config.h"
 #include "uart.h"
 #include "utils.h"
+#include "kernel/memory.h"
+#include "kernel/health.h"
 
 
 /* Forward Declarations */
@@ -165,24 +167,79 @@ void virtio_net_poll(struct virtio_pci_device *vdev)
 {
     uint32_t len;
 
+    // 1. Check if the hardware has placed a packet in the Used Ring
     int id = virtqueue_pop_used(&rx_queue, &len);
 
+    // If id is -1, there are no new packets to process
     if (id < 0)
         return;
 
-    uint8_t *packet = rx_buffers[id];
+    // 2. Adjust for the VirtIO-Net Header
+    // Every buffer starts with a 12-byte virtio_net_hdr
+    uint8_t *full_buffer = rx_buffers[id];
+    uint8_t *eth_frame = full_buffer + sizeof(struct virtio_net_hdr);
+    
+    // The 'len' returned by the device includes the header, so we subtract it
+    uint32_t eth_len = 0;
+    if (len > sizeof(struct virtio_net_hdr)) {
+        eth_len = len - sizeof(struct virtio_net_hdr);
+    }
 
-    uart_puts("[NET] Packet received\r\n");
+    // 3. Update Ankana's Health Stats
+    global_net_stats.rx_packets++;
+    
+    // Log to UART for debugging (Optional, can be removed for performance)
+    uart_puts("[NET] Packet RX (Len: ");
+    uart_put_int(eth_len);
+    uart_puts(")\r\n");
 
-    ethernet_handle_packet(packet, len);
+    // 4. Pass the clean Ethernet frame to the protocol dispatcher
+    // This will trigger Roheet's ARP or Pritam's IP logic
+    if (eth_len > 0) {
+        ethernet_handle_packet(eth_frame, eth_len);
+    }
 
-    /* Recycle buffer */
+    // 5. REFILL: We must return the descriptor to the Available Ring
+    // We reuse the exact same buffer and ID to keep memory static
     uint16_t new_id = virtqueue_add_descriptor(
         &rx_queue,
-        (uint64_t)packet,
+        (uint64_t)full_buffer, // Point back to the start of the 4KB page
         RX_BUF_SIZE,
-        VIRTQ_DESC_F_WRITE
+        VIRTQ_DESC_F_WRITE    // Device needs permission to write to this
     );
 
+    // 6. Notify the device that a new slot is open
     virtqueue_push_available(vdev, &rx_queue, new_id);
+}
+
+/**
+ * net_tx_reaper: Reclaims memory after packets are sent.
+ * This should be called in your main kernel loop.
+ */
+void net_tx_reaper() {
+    uint32_t len;
+    int desc_id;
+
+    // Use the local tx_queue pointer initialized in setup_queues
+    // We use &tx_queue because it's a static struct in this file.
+    while ((desc_id = virtqueue_pop_used(&tx_queue, &len)) != -1) {
+        
+        // 1. Get the address stored in the descriptor
+        // This is the pointer we kmalloc'd in ethernet_send()
+        void* buffer_to_free = (void*)tx_queue.desc[desc_id].addr;
+        
+        // 2. Safety check: Don't free NULL or obvious garbage
+        if (buffer_to_free) {
+            kfree(buffer_to_free);
+        }
+        
+        // 3. Update Ankana's stats
+        // We decrement usage because the buffer is back in the heap
+        if (global_net_stats.buffer_usage > 0) {
+            global_net_stats.buffer_usage--;
+        }
+        
+        // Increment total TX count for Roheet's WebUI
+        global_net_stats.tx_packets++;
+    }
 }

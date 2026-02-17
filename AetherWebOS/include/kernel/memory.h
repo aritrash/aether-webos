@@ -12,4 +12,10 @@ void* vmalloc(size_t size);
 void* ioremap(uint64_t phys_addr, size_t size);
 uint64_t get_heap_usage(void);
 
+typedef struct mem_header {
+    size_t size;
+    int is_free;
+    struct mem_header *next;
+} mem_header_t;
+
 #endif

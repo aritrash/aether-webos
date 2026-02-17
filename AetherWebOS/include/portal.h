@@ -34,7 +34,7 @@ void portal_render_terminal(void);
 void portal_render_confirm_prompt(void); 
 
 /* --- AetherBridge UI --- */
-void portal_render_wizard();      
+void portal_render_net_dashboard();     
 void portal_handle_input(char c);
 void portal_render_loading();
 
