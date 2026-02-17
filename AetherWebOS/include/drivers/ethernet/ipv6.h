@@ -13,5 +13,7 @@ struct ipv6_header {
 } __attribute__((packed));
 
 void ipv6_handle(uint8_t *data, uint32_t len);
+void print_ipv6(uint8_t addr[16]);
+
 
 #endif

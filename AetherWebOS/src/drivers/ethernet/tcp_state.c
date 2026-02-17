@@ -2,6 +2,7 @@
 #include "kernel/timer.h"
 #include "drivers/uart.h"
 #include "common/utils.h"
+#include "drivers/ethernet/tcp.h"
 
 struct tcp_control_block tcb_table[MAX_TCP_CONN];
 
@@ -86,4 +87,18 @@ void tcp_state_transition(struct tcp_control_block* tcb, uint8_t flags) {
             // Handle unexpected flags for the current state (RST logic)
             break;
     }
+}
+
+/**
+ * tcp_get_active_count: Returns the number of non-closed connections.
+ * Used for the F10 Dashboard and Ankana's health monitor.
+ */
+int tcp_get_active_count() {
+    int count = 0;
+    for (int i = 0; i < MAX_TCP_CONN; i++) {
+        if (tcb_table[i].state != TCP_CLOSED) {
+            count++;
+        }
+    }
+    return count;
 }
