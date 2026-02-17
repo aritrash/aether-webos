@@ -112,3 +112,7 @@ unsigned char uart_getc(void)
     while (*UART0_FR & (1 << 4));
     return (unsigned char)(*UART0_DR & 0xFF);
 }
+
+int uart_is_empty() {
+    return (*UART0_FR & (1 << 4));
+}
