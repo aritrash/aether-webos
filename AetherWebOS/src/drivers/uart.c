@@ -116,3 +116,11 @@ unsigned char uart_getc(void)
 int uart_is_empty() {
     return (*UART0_FR & (1 << 4));
 }
+
+void uart_print_hex16(uint16_t val) {
+    char hex[] = "0123456789abcdef";
+    // Simplified hex printer
+    for (int i = 12; i >= 0; i -= 4) {
+        uart_putc(hex[(val >> i) & 0xF]);
+    }
+}

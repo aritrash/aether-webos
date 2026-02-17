@@ -8,18 +8,9 @@
 static uint32_t bswap32(uint32_t x) {
     return __builtin_bswap32(x); // Use the builtins for AArch64 efficiency
 }
-
-static void uart_print_hex16(uint16_t val) {
-    char hex[] = "0123456789abcdef";
-    // Simplified hex printer
-    for (int i = 12; i >= 0; i -= 4) {
-        uart_putc(hex[(val >> i) & 0xF]);
-    }
-}
-
 /* ---------- IPv6 printer with :: compression ---------- */
 
-static void print_ipv6(uint8_t addr[16]) {
+void print_ipv6(uint8_t addr[16]) {
     uint16_t words[8];
     for (int i = 0; i < 8; i++) {
         words[i] = ((uint16_t)addr[i*2] << 8) | addr[i*2+1];

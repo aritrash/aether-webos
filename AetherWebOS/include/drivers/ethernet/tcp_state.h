@@ -57,5 +57,6 @@ void tcp_init_stack(void);
 struct tcp_control_block* tcp_allocate_tcb(void);
 struct tcp_control_block* tcp_find_tcb(uint32_t remote_ip, uint16_t remote_port);
 void tcp_state_transition(struct tcp_control_block* tcb, uint8_t flags);
+int tcp_get_active_count();
 
 #endif

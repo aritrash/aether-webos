@@ -7,12 +7,22 @@
 #include "config.h"        
 #include "utils.h"
 #include "kernel/health.h"
+#include "drivers/ethernet/tcp_state.h"
 
 extern struct virtio_pci_device *global_vnet_dev;
+extern void print_ipv6(uint8_t addr[16]);
+extern uint32_t aether_ip;
 
 static portal_state_t current_state;
 static char json_buffer[1024]; // Increased for more detailed telemetry
 static int portal_active = 0; 
+
+void uart_print_ip(uint32_t ip) {
+    for (int i = 0; i < 4; i++) {
+        uart_put_int((ip >> (i * 8)) & 0xFF);
+        if (i < 3) uart_putc('.');
+    }
+}
 
 /* Helper to convert byte to hex for UART display */
 void uart_put_hex_byte(uint8_t byte) {
@@ -112,11 +122,11 @@ void portal_render_net_dashboard() {
     uart_puts("#################################################\r\n\033[0m");
     
     // 1. Physical & Link Layer
-    uart_puts("\r\n [LINK LAYER]\r\n");
-    uart_puts("  - Interface: eth0 (VirtIO-Net-PCI)\r\n");
+    uart_puts("\r\n [LINK LAYER]   \r\n");
+    uart_puts("  - Interface: eth0 (VirtIO-Net-PCI)   \r\n");
     uart_puts("  - Status:    ");
     if (current_state.link_status) {
-        uart_puts("\033[32mUP (10Gbps Full-Duplex)\033[0m\r\n");
+        uart_puts("\033[32mUP (10Gbps Full-Duplex)   \033[0m\r\n");
     } else {
         uart_puts("\033[31mDOWN / NO CARRIER\033[0m\r\n");
     }
@@ -126,30 +136,44 @@ void portal_render_net_dashboard() {
         uart_put_hex_byte(current_state.mac[i]); 
         if(i < 5) uart_putc(':');
     }
-    uart_puts("\r\n");
+    uart_puts("   \r\n");
 
-    // 2. Network Layer (L3)
-    uart_puts("\r\n [NETWORK LAYER]\r\n");
-    uart_puts("  - IPv4 Addr: 192.168.0.1 (Static)\r\n");
+    // 2. Network Layer (L3) - THE REAL DEALS
+    uart_puts("\r\n [NETWORK LAYER]   \r\n");
+    
+    uart_puts("  - IPv4 Addr: ");
+    uart_print_ip(aether_ip); 
+    uart_puts(" (Static)   \r\n");
+
     uart_puts("  - IPv6 Addr: ");
-    // Note: Adrija's IPv6 observer can eventually pipe the real LL address here
-    uart_puts("fe80::5054:ff:fe12:3456\r\n"); 
+    // Generate the Link-Local address from the MAC if you want to be fancy,
+    // but for now, we'll let Adrija's printer handle a standard LL address array
+    uint8_t local_ipv6[16] = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 
+                              0x52, 0x54, 0x00, 0xff, 0xfe, 0x12, 0x34, 0x56};
+    print_ipv6(local_ipv6); 
+    uart_puts(" (Link-Local)   \r\n");
 
     // 3. Traffic Statistics (Ankana's Health Stats)
-    uart_puts("\r\n [TRAFFIC STATS]\r\n");
-    uart_puts("  - RX Frames: "); uart_put_int(global_net_stats.rx_packets);
-    uart_puts("\r\n  - TX Frames: "); uart_put_int(global_net_stats.tx_packets);
+    uart_puts("\r\n [TRAFFIC STATS]   \r\n");
+    uart_puts("  - RX Frames: "); 
+    uart_put_int(global_net_stats.rx_packets);
+    uart_puts("   ");
+    uart_puts("\r\n  - TX Frames: "); 
+    uart_put_int(global_net_stats.tx_packets);
+    uart_puts("   ");
     uart_puts("\r\n  - Collisions/Drops: "); 
     uart_put_int(global_net_stats.dropped_packets);
+    uart_puts("   ");
     uart_puts("\r\n  - Mem Buffers: ");
     uart_put_int(global_net_stats.buffer_usage); // Tracks how many kmalloc'd buffers are active
+    uart_puts("   \r\n");
 
-    // 4. Transport Layer (L4) - Placeholder for your TCP work today
+    // 4. Transport Layer (L4)
     uart_puts("\r\n [TRANSPORT LAYER]\r\n");
-    uart_puts("  - TCP Listeners: Port 80 (HTTP)\r\n");
+    uart_puts("  - TCP Listeners: Port 80 (HTTP)  \r\n");
     uart_puts("  - Active TCBs:   ");
-    // We will hook this to your MAX_TCP_CONN table later today
-    uart_put_int(0); 
+    uart_put_int(tcp_get_active_count()); // REAL DATA HOOKED UP!
+    uart_puts("   \r\n");
     
     uart_puts("\r\n\r\n-------------------------------------------------\r\n");
     uart_puts(" [ESC] Main Portal  |  [ENTER] Refresh           \r\n");
@@ -161,7 +185,7 @@ void portal_render_terminal() {
     uart_puts("\033[H"); // Reset cursor to 0,0
     
     uart_puts("===========================================\r\n");
-    uart_puts("         AETHER WebOS :: Portal v0.1.5     \r\n");
+    uart_puts("         AETHER WebOS :: Portal v0.1.6     \r\n");
     uart_puts("===========================================\r\n");
     
     uint64_t ms = current_state.uptime_ms;

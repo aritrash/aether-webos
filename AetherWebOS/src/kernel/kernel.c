@@ -23,7 +23,7 @@
 
 // Define the Aether OS Network Identity
 uint8_t aether_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}; 
-uint32_t aether_ip = 0x0100A8C0; // 192.168.0.1 
+uint32_t aether_ip = 0x0F02000A;
 
 typedef enum {
     MODE_PORTAL,
