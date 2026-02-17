@@ -2,6 +2,7 @@
 #include "drivers/uart.h"
 #include "common/utils.h"        // ntohs(), htons(), ntohl()
 #include "kernel/health.h"       // <-- For health_report_checksum_error()
+#include "drivers/ethernet/tcp_chk.h"
 
 
 /* Our OS IP: 10.0.0.2 */
