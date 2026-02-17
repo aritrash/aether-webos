@@ -60,3 +60,25 @@ void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_i
         tcp_state_transition(tcb, tcp->flags);
     }
 }
+
+/* =========================
+   tcp_state_transition
+   ========================= */
+
+void tcp_state_transition(struct tcp_control_block* tcb, uint8_t flags) {
+    if (!tcb) return;
+
+    switch (tcb->state) {
+        case TCP_SYN_RCVD:
+            if (flags & TCP_SYN) { 
+                // Remote sent SYN again? They didn't get our SYN-ACK.
+                global_net_stats.retransmissions++; 
+            }
+            if (flags & TCP_ACK) {
+                tcb->state = TCP_ESTABLISHED;
+                uart_puts("[TCP] Link Established with Remote Host.\r\n");
+            }
+            break;
+        // ... rest of code
+    }
+}
