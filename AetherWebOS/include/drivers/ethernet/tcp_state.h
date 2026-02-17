@@ -42,6 +42,7 @@ struct tcp_control_block {
     // 5. Application Link
     // Pointer to a function that processes data (e.g., HTTP GET parser)
     void (*data_callback)(uint8_t *payload, uint32_t len);
+    uint64_t last_activity; // Standardized here
 };
 
 /* --- Global Management --- */
