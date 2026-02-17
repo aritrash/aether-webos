@@ -2,6 +2,7 @@
 #include "drivers/uart.h"
 #include "common/utils.h"        // ntohs(), htons(), ntohl()
 #include "kernel/health.h"       // <-- For health_report_checksum_error()
+#include "drivers/ethernet/tcp_chk.h"
 
 
 /* Our OS IP: 10.0.0.2 */
@@ -123,9 +124,36 @@ void ipv4_handle(uint8_t *data, uint32_t len)
 
     switch (ip->protocol) {
 
-        case IP_PROTO_TCP:
-            uart_puts("[IP] TCP Packet detected\r\n");
-            break;
+         case IP_PROTO_TCP: {        
+             struct tcp_header *tcp =
+                 (struct tcp_header *)(data + header_len);
+         
+             uint32_t tcp_len =
+                 total_len - header_len;
+         
+             uint8_t *payload =
+                 (uint8_t *)tcp + sizeof(struct tcp_header);
+         
+             uint32_t payload_len =
+                 tcp_len - sizeof(struct tcp_header);
+         
+         
+             /* Validate TCP checksum */
+             if (tcp_validate_checksum(ip,
+                                       tcp,
+                                       payload,
+                                       payload_len)) {
+         
+                 uart_puts("[TCP] Valid packet\r\n");
+         
+             } else {
+         
+                 uart_puts("[TCP] Corrupt packet dropped\r\n");
+             }
+         
+             break;
+         }
+
 
         case IP_PROTO_UDP:
             uart_puts("[IP] UDP Packet detected\r\n");
