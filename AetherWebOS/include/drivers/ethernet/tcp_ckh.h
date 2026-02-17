@@ -2,15 +2,14 @@
 #define TCP_CHK_H
 
 #include <stdint.h>
-
 #include "drivers/ethernet/ipv4.h"
 #include "drivers/ethernet/tcp.h"
 
 /*
- * Calculate TCP checksum using:
+ * Calculates TCP checksum using:
  * - IPv4 pseudo header
  * - TCP header
- * - Payload
+ * - TCP payload
  */
 uint16_t tcp_checksum(struct ipv4_header *ip,
                       struct tcp_header *tcp,
@@ -18,10 +17,9 @@ uint16_t tcp_checksum(struct ipv4_header *ip,
                       uint32_t payload_len);
 
 /*
- * Validate checksum
  * Returns:
- *   1 = valid
- *   0 = corrupt
+ * 1 → Valid
+ * 0 → Corrupt
  */
 int tcp_validate_checksum(struct ipv4_header *ip,
                           struct tcp_header *tcp,
