@@ -23,5 +23,7 @@ struct tcp_header {
 } __attribute__((packed));
 
 void tcp_handle(uint8_t *segment, uint32_t len, uint32_t src_ip, uint32_t dest_ip);
+void tcp_send_fin(uint32_t dst_ip, uint16_t dst_port, uint16_t src_port);
+void tcp_send_data(uint32_t dst_ip, uint16_t dst_port, uint16_t src_port, uint8_t *data, uint32_t len);
 
 #endif

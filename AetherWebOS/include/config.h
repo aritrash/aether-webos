@@ -37,7 +37,11 @@
     #define PERIPHERAL_START   0x00000000
     #define PERIPHERAL_END     0x3FFFFFFF
 
-    
+    /* Network Identity */
+    #define AETHER_IP_ADDR  0x0F02000A  // 10.0.2.15
+    #define AETHER_GATEWAY  0x0202000A  // 10.0.2.2
+    #define MAX_TCP_CONN    8
+    #define AETHER_MAC_ADDR {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}
 
 #else
     /* --- Raspberry Pi 4 (BCM2711) Map --- */

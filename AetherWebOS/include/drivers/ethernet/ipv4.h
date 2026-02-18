@@ -10,7 +10,7 @@ struct ipv4_header {
     uint8_t  tos;
     uint16_t total_len;
     uint16_t id;
-    uint16_t flags_frag;
+    uint16_t flags_fragment;
     uint8_t  ttl;
     uint8_t  protocol;
     uint16_t checksum;
@@ -28,5 +28,6 @@ struct ipv4_header {
 uint16_t ipv4_checksum(void *data, size_t len);
 
 void ipv4_handle(uint8_t *data, uint32_t len);
+void ipv4_send(uint32_t dst_ip, uint8_t protocol, uint8_t *data, uint32_t len);
 
 #endif

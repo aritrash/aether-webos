@@ -25,8 +25,8 @@
    ===================================================== */
 
 // Define the Aether OS Network Identity
-uint8_t aether_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}; 
-uint32_t aether_ip = 0x0F02000A; // 10.0.2.15 for QEMU User Mode
+uint8_t aether_mac[6] = AETHER_MAC_ADDR;
+uint32_t aether_ip = AETHER_IP_ADDR; // 10.0.2.15 for QEMU User Mode
 
 typedef enum {
     MODE_PORTAL,
@@ -187,7 +187,7 @@ void kernel_main(void)
         }
 
         /* Sleep until next timer tick or packet IRQ */
-        asm volatile("wfi");
+        //asm volatile("wfi");
     }
 }
 

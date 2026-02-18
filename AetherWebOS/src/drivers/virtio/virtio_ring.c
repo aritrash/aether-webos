@@ -85,39 +85,63 @@ uint16_t virtqueue_add_descriptor(struct virtqueue *vq, uint64_t virt_addr, uint
 }
 
 /* ==========================================================================
-   virtqueue_push_available: Publishes the descriptor to the hardware
-   Developer: Roheet Purkayastha
+   virtqueue_push_available: Publishes descriptor to hardware (Modern PCI)
+   Developer: Roheet Purkayastha (Patched)
    ========================================================================== */
-void virtqueue_push_available(struct virtio_pci_device *vdev, struct virtqueue *vq, uint16_t desc_head) {
+void virtqueue_push_available(struct virtio_pci_device *vdev,
+                               struct virtqueue *vq,
+                               uint16_t desc_head)
+{
     uint16_t idx = vq->avail->idx;
+
+    /* 1. Write descriptor head into avail ring */
     vq->avail->ring[idx % vq->size] = desc_head;
 
-    // Memory Barrier: Ensure the ring is updated before the index is incremented
-    asm volatile("dsb sy" : : : "memory");
+    /*
+     * 2. Ensure descriptor table + ring entry
+     *    are globally visible before updating idx
+     */
+    asm volatile("dsb st" ::: "memory");
 
+    /* 3. Publish new available index */
     vq->avail->idx = idx + 1;
 
-    // Notify the hardware to process the new buffer
+    /*
+     * 4. FULL barrier before notifying device
+     *    Ensures idx write reaches memory before MMIO notify
+     */
+    asm volatile("dsb sy" ::: "memory");
+
+    /* 5. Ring the doorbell */
     virtqueue_notify(vdev, vq->queue_index);
 }
 
-/* ==========================================================================
-   virtio_pci_bind_queue: Registers the rings with the PCI device
-   Developer: Pritam Mondal
-   ========================================================================== */
-void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq) {
-    // Select the specific queue for programming
-    vdev->common->queue_select = vq->queue_index;
 
-    uint64_t desc_phys  = get_phys(vq->desc);
-    uint64_t avail_phys = get_phys(vq->avail);
-    uint64_t used_phys  = get_phys(vq->used);
+/* ==========================================================================
+   virtio_pci_bind_queue: Registers the rings with the PCI device (FIXED)
+   Developer: Pritam Mondal (Patched)
+   ========================================================================== */
+void virtio_pci_bind_queue(struct virtio_pci_device *vdev,
+                           struct virtqueue *vq)
+{
+    /* 1. Select queue */
+    vdev->common->queue_select = vq->queue_index;
 
     uart_puts("[VIRTIO] Binding queue ");
     uart_put_int(vq->queue_index);
     uart_puts("\r\n");
 
-    // Program Physical Addresses into 32-bit registers (split Lo/Hi)
+    /* 2. Program queue size (CRITICAL STEP) */
+    vdev->common->queue_size = vq->size;
+
+    /* Ensure size write completes */
+    asm volatile("dsb sy" ::: "memory");
+
+    /* 3. Program physical addresses */
+    uint64_t desc_phys  = get_phys(vq->desc);
+    uint64_t avail_phys = get_phys(vq->avail);
+    uint64_t used_phys  = get_phys(vq->used);
+
     vdev->common->queue_desc_lo = (uint32_t)(desc_phys & 0xFFFFFFFF);
     vdev->common->queue_desc_hi = (uint32_t)(desc_phys >> 32);
 
@@ -127,8 +151,12 @@ void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq)
     vdev->common->queue_used_lo = (uint32_t)(used_phys & 0xFFFFFFFF);
     vdev->common->queue_used_hi = (uint32_t)(used_phys >> 32);
 
-    // Finalize the link
+    /* 4. Memory barrier before enabling */
+    asm volatile("dsb sy" ::: "memory");
+
+    /* 5. Enable queue */
     vdev->common->queue_enable = 1;
+
     uart_puts("[VIRTIO] Queue enabled\r\n");
 }
 
@@ -138,6 +166,8 @@ void virtio_pci_bind_queue(struct virtio_pci_device *vdev, struct virtqueue *vq)
    ========================================================================== */
 
 int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out) {
+    // 'dsb sy' ensures all previous memory instructions are complete across the whole system
+    __asm__ volatile("dsb sy" : : : "memory");
     // 1. Check if hardware has processed anything
     if (vq->last_used_idx == *(volatile uint16_t *)&vq->used->idx) {
         return -1; 

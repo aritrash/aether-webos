@@ -3,7 +3,8 @@
 #include "common/utils.h"        // ntohs(), htons(), ntohl()
 #include "kernel/health.h"       // <-- For health_report_checksum_error()
 #include "drivers/ethernet/tcp_chk.h"
-
+#include "kernel/memory.h"       // For kmalloc() in tcp_send_data
+#include "drivers/virtio/virtio_net.h"  // For global_vnet_dev reference
 
 /* Our OS IP: 10.0.0.2 */
 #define AETHER_IP  0x0A000002
@@ -167,4 +168,45 @@ void ipv4_handle(uint8_t *data, uint32_t len)
             uart_puts("[IP] Unknown protocol\r\n");
             break;
     }
+}
+
+// Reference the global VirtIO-Net device from kernel.c/pcie.c
+extern struct virtio_pci_device *global_vnet_dev;
+
+void ipv4_send(uint32_t dst_ip, uint8_t protocol, uint8_t *data, uint32_t len) {
+    if (!global_vnet_dev) return;
+
+    uint32_t total_len = sizeof(struct ipv4_header) + len;
+    struct ipv4_header *pkt = (struct ipv4_header *)kmalloc(total_len);
+    if (!pkt) return;
+
+    // 1. Fill IPv4 Header
+    pkt->version_ihl = 0x45; // Version 4, Header Length 5 (20 bytes)
+    pkt->tos = 0;
+    pkt->total_len = htons(total_len);
+    pkt->id = htons(1);      // Simple ID for now
+    pkt->flags_fragment = 0;
+    pkt->ttl = 64;           // Standard TTL
+    pkt->protocol = protocol;
+    pkt->checksum = 0;       // Calculate this last
+    pkt->src_ip = AETHER_IP_ADDR;
+    pkt->dest_ip = dst_ip;
+
+    // 2. IP Checksum (Just over the 20-byte header)
+    // You can reuse Pritam's logic or a simple 16-bit accumulator
+    uint32_t sum = 0;
+    uint16_t *ptr = (uint16_t *)pkt;
+    for (int i = 0; i < 10; i++) sum += ptr[i];
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    pkt->checksum = (uint16_t)(~sum);
+
+    // 3. Copy Payload (The TCP Segment)
+    memcpy((uint8_t *)pkt + sizeof(struct ipv4_header), data, len);
+
+    // 4. Hand off to Ethernet/VirtIO
+    // For QEMU user-mode networking, we can send this directly to the gateway MAC
+    uint8_t gateway_mac[6] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56}; 
+    virtio_net_send(global_vnet_dev, gateway_mac, 0x0800, (uint8_t *)pkt, total_len);
+
+    kfree(pkt);
 }

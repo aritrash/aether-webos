@@ -110,3 +110,19 @@ void uart_put_ip(uint32_t ip) {
         (void)ip; // Temporary suppression
     }
 }
+
+uint32_t str_len(const char* s) {
+    uint32_t len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+int str_contains(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return 0;
+    for (int i = 0; haystack[i]; i++) {
+        int j = 0;
+        while (needle[j] && haystack[i+j] == needle[j]) j++;
+        if (!needle[j]) return 1;
+    }
+    return 0;
+}

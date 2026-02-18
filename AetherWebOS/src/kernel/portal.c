@@ -9,6 +9,8 @@
 #include "kernel/health.h"
 #include "drivers/ethernet/tcp_state.h"
 #include "uart.h"
+#include "drivers/ethernet/tcp.h"
+#include "drivers/ethernet/ipv4.h"  
 
 extern struct virtio_pci_device *global_vnet_dev;
 extern void print_ipv6(uint8_t addr[16]);
@@ -204,4 +206,27 @@ void portal_render_terminal() {
     
     uart_puts("\r\n-------------------------------------------\r\n");
     uart_puts("Aether Ready. Waiting for WebClient...     \r\n");
+}
+
+// Change this name from aether_ui_body to aether_index_html
+const char* aether_index_html = 
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n\r\n"
+    "<html>"
+    "<head><title>Aether WebOS</title></head>"
+    "<body style='background:#000; color:#0f0; font-family:monospace;'>"
+    "<h1>Aether OS v0.1.7</h1>"
+    "<p>Kernel Status: ONLINE</p>"
+    "<p>Team: Roheet, Pritam, Adrija, Ankana</p>"
+    "</body>"
+    "</html>";
+
+// Simplify this function or remove it if portal_socket_wrapper does the work
+void portal_serve_index(uint32_t src_ip, uint16_t src_port) {
+    uint32_t html_len = 0;
+    while(aether_index_html[html_len] != '\0') html_len++;
+    
+    uart_puts("[PORTAL] Serving Landing Page...\r\n");
+    tcp_send_data(src_ip, src_port, 80, (uint8_t*)aether_index_html, html_len);
 }

@@ -73,5 +73,6 @@ struct virtio_net_hdr {
 typedef struct virtio_net_hdr virtio_net_rx_hdr_t;
 typedef struct virtio_net_hdr virtio_net_tx_hdr_t;
 void net_tx_reaper();
-
+void virtio_net_send(struct virtio_pci_device *vdev, uint8_t *dest_mac, uint16_t type, uint8_t *data, uint32_t len);
+void virtio_net_setup_queues(struct virtio_pci_device *vdev);
 #endif
