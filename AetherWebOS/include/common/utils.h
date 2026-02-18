@@ -34,5 +34,8 @@ void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx,
                             unsigned long tcp, unsigned long rexmit, 
                             unsigned long cksum);
 extern char* ltoa(unsigned long num, char* str);
+uint32_t str_len(const char* s);
+int str_contains(const char* haystack, const char* needle);
+void uart_put_ip(uint32_t ip);
 
 #endif

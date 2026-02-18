@@ -124,3 +124,17 @@ void uart_print_hex16(uint16_t val) {
         uart_putc(hex[(val >> i) & 0xF]);
     }
 }
+
+void uart_print_ip(uint32_t ip) {
+    for (int i = 0; i < 4; i++) {
+        uart_put_int((ip >> (i * 8)) & 0xFF);
+        if (i < 3) uart_putc('.');
+    }
+}
+
+/* Helper to convert byte to hex for UART display */
+void uart_put_hex_byte(uint8_t byte) {
+    const char *hex = "0123456789ABCDEF";
+    uart_putc(hex[(byte >> 4) & 0xF]);
+    uart_putc(hex[byte & 0xF]);
+}

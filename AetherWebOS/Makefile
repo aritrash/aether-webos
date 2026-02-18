@@ -52,8 +52,10 @@ ifeq ($(BOARD), VIRT)
     QEMU_MACHINE = virt,gic-version=3,highmem=off 
     QEMU_CPU = max
     QEMU_RAM = 1G
-    # Standard Serial + TCP Bridge for WebUI
-    QEMU_SERIAL = -serial stdio -serial tcp:127.0.0.1:1234,server,nowait
+    # Standard Serial + Network Forwarding
+    QEMU_SERIAL = -serial stdio
+    # hostfwd=tcp::8080-:80 maps Windows 8080 to Aether Port 80
+    QEMU_NET = -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8080-:80 -device virtio-net-pci,netdev=net0
     QEMU_EXTRA = -display none -machine virtualization=off
 else
     KERNEL_ADDR = 0x80000
@@ -61,6 +63,7 @@ else
     QEMU_CPU = cortex-a72
     QEMU_RAM = 2G
     QEMU_SERIAL = -serial stdio
+    QEMU_NET = 
     QEMU_EXTRA = 
 endif
 
@@ -77,8 +80,9 @@ clean:
 run: all
 	qemu-system-aarch64 -M $(QEMU_MACHINE) \
 	-cpu $(QEMU_CPU) -m $(QEMU_RAM) \
-	$(QEMU_SERIAL) $(QEMU_EXTRA) \
+	$(QEMU_SERIAL) \
+	$(QEMU_NET) \
+	$(QEMU_EXTRA) \
 	-device qemu-xhci,p2=15,p3=15 \
 	-device usb-tablet \
-	-netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
 	-kernel kernel8.img

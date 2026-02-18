@@ -42,5 +42,7 @@ unsigned char uart_getc();
 int uart_is_writable(void);
 int uart_is_empty();
 void uart_print_hex16(uint16_t val);
+void uart_print_ip(uint32_t ip);
+void uart_put_hex_byte(uint8_t byte);
 
 #endif

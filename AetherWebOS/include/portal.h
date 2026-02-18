@@ -3,39 +3,33 @@
 
 #include <stdint.h>
 
-/**
- * portal_state_t: The master state object for the Aether WebOS ecosystem.
- * This struct is mirrored by Roheet's React state management.
- */
 typedef struct {
-    // Connectivity & Networking
     uint8_t  mac[6];
-    uint32_t ip_addr;     /* Placeholder for DHCP/Static IP */
-    uint8_t  link_status; /* 1 = Up, 0 = Down */
-    uint32_t packets_rx;  /* Real-time counter for Sniffer App */
+    uint32_t ip_addr;
+    uint8_t  link_status;
+    uint32_t packets_rx;
     uint32_t packets_tx;
-
-    // Clock & Timing
     uint64_t uptime_ms;
-    
-    // System Health & Topology
     uint32_t heap_usage_kb;
     uint32_t device_count;
-    uint8_t  cpu_load;    /* Calculated via Timer IRQ duty cycle */
+    uint8_t  cpu_load;
 } portal_state_t;
 
-/* --- Lifecycle & Rendering --- */
+/* Lifecycle */
 void portal_start(void);
 void portal_refresh_state(void);
 char* portal_get_json(void);
 
-/* --- Terminal UI (ANSI) --- */
+/* HTTP Router Entry */
+void portal_handle_http(uint8_t *payload,
+                        uint32_t len,
+                        uint32_t src_ip,
+                        uint16_t src_port);
+
+/* Renderers */
 void portal_render_terminal(void);
-void portal_render_confirm_prompt(void); 
+void portal_render_confirm_prompt(void);
+void portal_render_net_dashboard(void);
+void portal_render_loading(void);
 
-/* --- AetherBridge UI --- */
-void portal_render_net_dashboard();     
-void portal_handle_input(char c);
-void portal_render_loading();
-
-#endif /* PORTAL_H */
+#endif

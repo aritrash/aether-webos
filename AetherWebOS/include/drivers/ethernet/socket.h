@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-typedef void (*socket_handler_t)(uint8_t *data, size_t len);
+// New signature includes networking context
+typedef void (*socket_handler_t)(uint8_t *data, size_t len, uint32_t src_ip, uint16_t src_port);
 
 struct socket_listener {
     uint16_t port;

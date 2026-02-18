@@ -10,6 +10,7 @@
 #include "kernel/health.h"
 
 
+
 /* Forward Declarations */
 void virtio_net_setup_queues(struct virtio_pci_device *vdev);
 void virtio_net_poll(struct virtio_pci_device *vdev);
@@ -75,6 +76,7 @@ void virtio_net_init(struct virtio_pci_device *vdev)
     uint32_t accept1 = 0;
 
     if (f0 & (1 << 5)) accept0 |= (1 << 5);   // MAC
+    if (f0 & (1 << 27)) accept0 |= (1 << 27); // ANY_LAYOUT (Highly recommended)
     if (f1 & (1 << 0)) accept1 |= (1 << 0);   // VERSION_1
 
     mmio_write32(common + 0x08, 0);
@@ -121,21 +123,32 @@ void virtio_net_init(struct virtio_pci_device *vdev)
 
 
 /* ============================================
-   Queue Setup
+   Queue Setup (Modern VirtIO PCI, ARM64 Safe)
    ============================================ */
 
 void virtio_net_setup_queues(struct virtio_pci_device *vdev)
 {
     uart_puts("[NET] Setting up RX/TX queues...\r\n");
 
-    /* RX Queue */
+    /* =========================
+       RX QUEUE
+       ========================= */
+
     vdev->common->queue_select = RX_QUEUE_INDEX;
+
     uint16_t rx_size = vdev->common->queue_size;
+    if (rx_size == 0) {
+        uart_puts("[ERROR] RX queue size is 0!\r\n");
+        return;
+    }
 
     virtqueue_init(&rx_queue, rx_size, RX_QUEUE_INDEX, rx_ring_mem);
     virtio_pci_bind_queue(vdev, &rx_queue);
 
-    /* Pre-fill RX buffers */
+    /*
+     * Pre-fill ALL RX buffers first
+     * Do NOT notify per descriptor.
+     */
     for (uint16_t i = 0; i < rx_size; i++) {
 
         uint16_t id = virtqueue_add_descriptor(
@@ -145,18 +158,47 @@ void virtio_net_setup_queues(struct virtio_pci_device *vdev)
             VIRTQ_DESC_F_WRITE
         );
 
-        virtqueue_push_available(vdev, &rx_queue, id);
+        /* Manually publish into avail ring without notify */
+        uint16_t idx = rx_queue.avail->idx;
+        rx_queue.avail->ring[idx % rx_queue.size] = id;
+        rx_queue.avail->idx = idx + 1;
     }
 
-    /* TX Queue */
+    /*
+     * Ensure descriptor table + avail ring
+     * are globally visible before notify
+     */
+    asm volatile("dsb sy" ::: "memory");
+
+    /* Single notify for entire RX batch */
+    virtqueue_notify(vdev, RX_QUEUE_INDEX);
+
+
+    /* =========================
+       TX QUEUE
+       ========================= */
+
     vdev->common->queue_select = TX_QUEUE_INDEX;
+
     uint16_t tx_size = vdev->common->queue_size;
+    if (tx_size == 0) {
+        uart_puts("[ERROR] TX queue size is 0!\r\n");
+        return;
+    }
 
     virtqueue_init(&tx_queue, tx_size, TX_QUEUE_INDEX, tx_ring_mem);
     virtio_pci_bind_queue(vdev, &tx_queue);
 
+    /*
+     * No need to prefill TX.
+     * TX descriptors are allocated dynamically.
+     */
+
+    asm volatile("dsb sy" ::: "memory");
+
     uart_puts("[NET] Queues Ready\r\n");
 }
+
 
 
 /* ============================================
@@ -165,52 +207,63 @@ void virtio_net_setup_queues(struct virtio_pci_device *vdev)
 
 void virtio_net_poll(struct virtio_pci_device *vdev)
 {
+
     uint32_t len;
 
-    // 1. Check if the hardware has placed a packet in the Used Ring
+    /* Ensure DMA writes are visible to CPU */
+    asm volatile("dsb sy" ::: "memory");
+
     int id = virtqueue_pop_used(&rx_queue, &len);
 
-    // If id is -1, there are no new packets to process
     if (id < 0)
         return;
 
-    // 2. Adjust for the VirtIO-Net Header
-    // Every buffer starts with a 12-byte virtio_net_hdr
+    /* Memory barrier AFTER popping used ring */
+    asm volatile("dsb sy" ::: "memory");
+
     uint8_t *full_buffer = rx_buffers[id];
-    uint8_t *eth_frame = full_buffer + sizeof(struct virtio_net_hdr);
-    
-    // The 'len' returned by the device includes the header, so we subtract it
+
+    /* Modern VirtIO v1.0 header is 12 bytes */
+    #define VIRTIO_NET_HDR_SZ 12
+    uint8_t *eth_frame = full_buffer + VIRTIO_NET_HDR_SZ;
+
+
     uint32_t eth_len = 0;
     if (len > sizeof(struct virtio_net_hdr)) {
         eth_len = len - sizeof(struct virtio_net_hdr);
     }
 
-    // 3. Update Ankana's Health Stats
-    global_net_stats.rx_packets++;
-    
-    // Log to UART for debugging (Optional, can be removed for performance)
-    uart_puts("[NET] Packet RX (Len: ");
-    uart_put_int(eth_len);
-    uart_puts(")\r\n");
+    if (eth_len == 0)
+        goto refill;
 
-    // 4. Pass the clean Ethernet frame to the protocol dispatcher
-    // This will trigger Roheet's ARP or Pritam's IP logic
-    if (eth_len > 0) {
-        ethernet_handle_packet(eth_frame, eth_len);
+    /* Debug MAC verification */
+    uart_puts("[RX] Dest MAC: ");
+    for (int i = 0; i < 6; i++) {
+        uart_put_hex(eth_frame[i]);
+        if (i < 5) uart_puts(":");
     }
+    uart_puts("\r\n");
 
-    // 5. REFILL: We must return the descriptor to the Available Ring
-    // We reuse the exact same buffer and ID to keep memory static
+    uint16_t ethertype = (eth_frame[12] << 8) | eth_frame[13];
+    uart_puts("[RX] EtherType: ");
+    uart_put_hex(ethertype);
+    uart_puts("\r\n");
+
+    global_net_stats.rx_packets++;
+
+    ethernet_handle_packet(eth_frame, eth_len);
+
+refill:
     uint16_t new_id = virtqueue_add_descriptor(
         &rx_queue,
-        (uint64_t)full_buffer, // Point back to the start of the 4KB page
+        (uint64_t)full_buffer,
         RX_BUF_SIZE,
-        VIRTQ_DESC_F_WRITE    // Device needs permission to write to this
+        VIRTQ_DESC_F_WRITE
     );
 
-    // 6. Notify the device that a new slot is open
     virtqueue_push_available(vdev, &rx_queue, new_id);
 }
+
 
 /**
  * net_tx_reaper: Reclaims memory after packets are sent.
@@ -242,4 +295,56 @@ void net_tx_reaper() {
         // Increment total TX count for Roheet's WebUI
         global_net_stats.tx_packets++;
     }
+}
+
+/**
+ * virtio_net_send: The physical exit point for all Aether OS traffic.
+ * Wraps data in an Ethernet frame and pushes to VirtIO TX Ring.
+ */
+
+extern uint8_t aether_mac[6];
+
+void virtio_net_send(struct virtio_pci_device *vdev, uint8_t *dest_mac, uint16_t type, uint8_t *data, uint32_t len) {
+    if (!vdev) return;
+
+    // 1. Calculate total size: VirtIO Header + Ethernet Header + Payload
+    uint32_t eth_len = 14 + len; 
+    uint32_t total_len = sizeof(struct virtio_net_hdr) + eth_len;
+
+    // 2. Allocate a single contiguous buffer for the whole frame
+    // This will be freed later by Ankana's net_tx_reaper()
+    uint8_t *buffer = (uint8_t *)kmalloc(total_len);
+    if (!buffer) return;
+
+    // 3. Initialize the VirtIO-Net Header (Zero it out for standard send)
+    struct virtio_net_hdr *vhdr = (struct virtio_net_hdr *)buffer;
+    memset(vhdr, 0, sizeof(struct virtio_net_hdr));
+
+    // 4. Construct Ethernet Header (Directly after VirtIO header)
+    uint8_t *eth_start = buffer + sizeof(struct virtio_net_hdr);
+    
+    // Destination MAC
+    memcpy(eth_start, dest_mac, 6);
+    // Source MAC (Aether OS Identity)
+    memcpy(eth_start + 6, aether_mac, 6);
+    // Protocol Type (e.g., 0x0800 for IPv4)
+    eth_start[12] = (type >> 8) & 0xFF;
+    eth_start[13] = type & 0xFF;
+
+    // 5. Copy the Payload (The IP/TCP packet from Pritam/Roheet)
+    memcpy(eth_start + 14, data, len);
+
+    // 6. Add to TX Queue
+    uint16_t id = virtqueue_add_descriptor(
+        &tx_queue,
+        (uint64_t)buffer,
+        total_len,
+        0 // Flags: 0 because this is a READ-ONLY buffer for the device
+    );
+
+    // 7. Notify Device
+    virtqueue_push_available(vdev, &tx_queue, id);
+    
+    // Update global usage for the F10 Dashboard
+    global_net_stats.buffer_usage++;
 }

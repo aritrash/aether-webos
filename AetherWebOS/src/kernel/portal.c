@@ -8,6 +8,9 @@
 #include "utils.h"
 #include "kernel/health.h"
 #include "drivers/ethernet/tcp_state.h"
+#include "uart.h"
+#include "drivers/ethernet/tcp.h"
+#include "drivers/ethernet/ipv4.h"  
 
 extern struct virtio_pci_device *global_vnet_dev;
 extern void print_ipv6(uint8_t addr[16]);
@@ -16,20 +19,6 @@ extern uint32_t aether_ip;
 static portal_state_t current_state;
 static char json_buffer[1024]; // Increased for more detailed telemetry
 static int portal_active = 0; 
-
-void uart_print_ip(uint32_t ip) {
-    for (int i = 0; i < 4; i++) {
-        uart_put_int((ip >> (i * 8)) & 0xFF);
-        if (i < 3) uart_putc('.');
-    }
-}
-
-/* Helper to convert byte to hex for UART display */
-void uart_put_hex_byte(uint8_t byte) {
-    const char *hex = "0123456789ABCDEF";
-    uart_putc(hex[(byte >> 4) & 0xF]);
-    uart_putc(hex[byte & 0xF]);
-}
 
 void portal_refresh_state() {
     current_state.uptime_ms = get_system_uptime_ms();
@@ -217,4 +206,27 @@ void portal_render_terminal() {
     
     uart_puts("\r\n-------------------------------------------\r\n");
     uart_puts("Aether Ready. Waiting for WebClient...     \r\n");
+}
+
+// Change this name from aether_ui_body to aether_index_html
+const char* aether_index_html = 
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Connection: close\r\n\r\n"
+    "<html>"
+    "<head><title>Aether WebOS</title></head>"
+    "<body style='background:#000; color:#0f0; font-family:monospace;'>"
+    "<h1>Aether OS v0.1.7</h1>"
+    "<p>Kernel Status: ONLINE</p>"
+    "<p>Team: Roheet, Pritam, Adrija, Ankana</p>"
+    "</body>"
+    "</html>";
+
+// Simplify this function or remove it if portal_socket_wrapper does the work
+void portal_serve_index(uint32_t src_ip, uint16_t src_port) {
+    uint32_t html_len = 0;
+    while(aether_index_html[html_len] != '\0') html_len++;
+    
+    uart_puts("[PORTAL] Serving Landing Page...\r\n");
+    tcp_send_data(src_ip, src_port, 80, (uint8_t*)aether_index_html, html_len);
 }

@@ -93,4 +93,6 @@ void virtqueue_push_available(struct virtio_pci_device *vdev, struct virtqueue *
 /* Adrija: Checks the Used ring and returns a processed descriptor ID */
 int virtqueue_pop_used(struct virtqueue *vq, uint32_t *len_out);
 
+void virtqueue_notify(struct virtio_pci_device *vdev, uint16_t queue_index);
+
 #endif
