@@ -21,7 +21,7 @@ __attribute__((aligned(4096), section(".pgtbl"))) static kernel_pt_t kpt;
  * clean_cache_range:
  * Forces data out of L1/L2 caches into physical RAM.
  */
-static void clean_cache_range(uintptr_t start, uintptr_t end) {
+void clean_cache_range(uintptr_t start, uintptr_t end) {
     uintptr_t addr = start & ~63ULL; 
     for (; addr < end; addr += 64) {
         asm volatile("dc cvac, %0" : : "r" (addr) : "memory");
