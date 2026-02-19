@@ -44,5 +44,6 @@ extern void mmu_init();
  * Handles L3 page table entry population.
  */
 extern void mmu_map_region(uintptr_t va, uintptr_t pa, size_t size, uint64_t flags);
+void clean_cache_range(uintptr_t start, uintptr_t end);
 
 #endif

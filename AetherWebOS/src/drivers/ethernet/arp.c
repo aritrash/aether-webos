@@ -2,6 +2,7 @@
 #include "drivers/virtio/virtio_net.h"
 #include "ethernet/ethernet.h"
 #include "common/utils.h"
+#include "uart.h"
 
 #define ARP_CACHE_SIZE 4
 
@@ -30,9 +31,6 @@ static void arp_cache_insert(uint32_t ip_host_order, uint8_t *mac)
     }
 }
 
-/* ================================
-   ARP Packet Handler
-   ================================ */
 void arp_handle(uint8_t *data, uint32_t len)
 {
     if (len < sizeof(struct arp_packet))
@@ -40,29 +38,47 @@ void arp_handle(uint8_t *data, uint32_t len)
 
     struct arp_packet *arp = (struct arp_packet *)data;
 
-    /* Validate hardware + protocol */
-    if (arp->htype != __builtin_bswap16(ARP_HTYPE_ETH))
+    uart_puts("[ARP] Packet\r\n");
+
+    uint32_t sip = __builtin_bswap32(arp->sender_ip);
+    uint32_t tip = __builtin_bswap32(arp->target_ip);
+
+    uart_puts("Sender IP: ");
+    uart_put_hex(sip);
+    uart_puts("\r\n");
+
+    uart_puts("Target IP: ");
+    uart_put_hex(tip);
+    uart_puts("\r\n");
+
+    /* Validate hardware type (Ethernet) */
+    if (__builtin_bswap16(arp->htype) != ARP_HTYPE_ETH)
         return;
 
-    if (arp->ptype != __builtin_bswap16(ARP_PTYPE_IPV4))
+    /* Validate protocol type (IPv4) */
+    if (__builtin_bswap16(arp->ptype) != ARP_PTYPE_IPV4)
         return;
 
-    /* Convert sender IP to host order and learn it */
+    /* Learn sender (store IP in host order inside cache) */
     uint32_t sender_ip_host = __builtin_bswap32(arp->sender_ip);
     arp_cache_insert(sender_ip_host, arp->sender_mac);
 
-    /* Check if ARP target IP matches our IP (host order compare) */
-    uint32_t target_ip_host = __builtin_bswap32(arp->target_ip);
-    if (target_ip_host != aether_ip)
-        return;
-
-    /* Only respond to ARP requests */
+    /* Only handle ARP requests */
     if (__builtin_bswap16(arp->opcode) != ARP_OPCODE_REQUEST)
         return;
 
-    /* ================================
+    /* IMPORTANT:
+       arp->target_ip is in NETWORK order.
+       aether_ip must also be in NETWORK order.
+    */
+    uint32_t target_ip_host = __builtin_bswap32(arp->target_ip);
+
+    if (target_ip_host != aether_ip)
+        return;
+
+    /* ==============================
        Construct ARP Reply
-       ================================ */
+       ============================== */
     struct arp_packet reply;
 
     reply.htype  = __builtin_bswap16(ARP_HTYPE_ETH);
@@ -73,16 +89,17 @@ void arp_handle(uint8_t *data, uint32_t len)
 
     /* Sender = us */
     memcpy(reply.sender_mac, aether_mac, 6);
-    reply.sender_ip = __builtin_bswap32(aether_ip);  // back to network order
+    reply.sender_ip =  __builtin_bswap32(aether_ip);   // already network order
 
     /* Target = original sender */
     memcpy(reply.target_mac, arp->sender_mac, 6);
-    reply.target_ip = arp->sender_ip;  // already network order
+    reply.target_ip = arp->sender_ip;   // already network order
 
-    /* Send ARP reply */
+    uart_puts("[ARP] Reply triggered\r\n");
+
     ethernet_send(
         arp->sender_mac,
-        0x0806, /* ARP EtherType */
+        ETH_TYPE_ARP,
         (uint8_t *)&reply,
         sizeof(struct arp_packet)
     );

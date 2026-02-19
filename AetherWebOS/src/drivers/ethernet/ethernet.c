@@ -8,6 +8,7 @@
 #include "drivers/ethernet/arp.h"  
 #include "drivers/ethernet/ipv6.h" 
 #include "drivers/ethernet/ipv4.h"
+#include "kernel/mmu.h" // For cache management
 
 extern uint8_t aether_mac[6];
 extern struct virtio_pci_device *global_vnet_dev;
@@ -38,7 +39,8 @@ void ethernet_send(uint8_t *dest_mac, uint16_t ethertype, uint8_t *payload, uint
 
     // 7. Sync cache so DMA controller sees it
     // Note: Assuming clean_cache_range is in include/kernel/mmu.h or similar
-    // clean_cache_range((uintptr_t)buffer, (uintptr_t)buffer + total_len);
+    clean_cache_range((uintptr_t)buffer, (uintptr_t)buffer + total_len);
+    asm volatile("dsb sy" ::: "memory");
 
     // 8. Queue it up using the name from your .h (tx_vq)
     struct virtqueue *tx_q = global_vnet_dev->tx_vq;
