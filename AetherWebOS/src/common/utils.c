@@ -126,3 +126,103 @@ int str_contains(const char* haystack, const char* needle) {
     }
     return 0;
 }
+
+/* =========================================
+   Internal helper: unsigned int to string
+   ========================================= */
+static int utoa_dec(char *buf, unsigned int value)
+{
+    char tmp[16];
+    int i = 0;
+
+    if (value == 0) {
+        buf[0] = '0';
+        return 1;
+    }
+
+    while (value > 0) {
+        tmp[i++] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    int len = i;
+
+    for (int j = 0; j < len; j++)
+        buf[j] = tmp[len - j - 1];
+
+    return len;
+}
+
+/* =========================================
+   Minimal snprintf (supports %u %d %s)
+   ========================================= */
+int ksnprintf(char *out,
+              unsigned int out_size,
+              const char *fmt,
+              ...)
+{
+    if (!out || out_size == 0)
+        return 0;
+
+    char *dst = out;
+    unsigned int remaining = out_size - 1; // reserve null
+
+    va_list args;
+    va_start(args, fmt);
+
+    while (*fmt && remaining > 0)
+    {
+        if (*fmt != '%') {
+            *dst++ = *fmt++;
+            remaining--;
+            continue;
+        }
+
+        fmt++; // skip %
+
+        if (*fmt == 'u') {
+            unsigned int val = va_arg(args, unsigned int);
+            char num[16];
+            int len = utoa_dec(num, val);
+
+            for (int i = 0; i < len && remaining > 0; i++) {
+                *dst++ = num[i];
+                remaining--;
+            }
+        }
+        else if (*fmt == 'd') {
+            int val = va_arg(args, int);
+
+            if (val < 0) {
+                if (remaining > 0) {
+                    *dst++ = '-';
+                    remaining--;
+                }
+                val = -val;
+            }
+
+            char num[16];
+            int len = utoa_dec(num, (unsigned int)val);
+
+            for (int i = 0; i < len && remaining > 0; i++) {
+                *dst++ = num[i];
+                remaining--;
+            }
+        }
+        else if (*fmt == 's') {
+            char *str = va_arg(args, char*);
+            while (*str && remaining > 0) {
+                *dst++ = *str++;
+                remaining--;
+            }
+        }
+
+        fmt++;
+    }
+
+    va_end(args);
+
+    *dst = '\0';
+
+    return (int)(dst - out);
+}

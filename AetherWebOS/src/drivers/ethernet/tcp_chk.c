@@ -32,17 +32,22 @@
 /**
  * calculate_sum: Generic 16-bit one's complement sum
  */
-static uint32_t calculate_sum(void *data, uint32_t len, uint32_t initial_sum) {
+static uint32_t calculate_sum(void *data,
+                              uint32_t len,
+                              uint32_t initial_sum)
+{
     uint32_t sum = initial_sum;
-    uint16_t *ptr = (uint16_t *)data;
+    uint8_t *ptr = (uint8_t *)data;
 
     while (len > 1) {
-        sum += *ptr++;
+        uint16_t word = (ptr[0] << 8) | ptr[1];
+        sum += word;
+        ptr += 2;
         len -= 2;
     }
 
     if (len == 1) {
-        sum += *((uint8_t *)ptr);
+        sum += (ptr[0] << 8);
     }
 
     return sum;
@@ -57,7 +62,7 @@ uint16_t tcp_checksum(struct ipv4_header *ip, struct tcp_header *tcp, uint8_t *p
     sum += ip->src_ip & 0xFFFF;
     sum += (ip->dest_ip >> 16) & 0xFFFF;
     sum += ip->dest_ip & 0xFFFF;
-    sum += htons(6); // Protocol TCP (6) padded to 16-bit
+    sum += 0x0006; // Fix 1: Changed to hardcoded TCP protocol number
     sum += htons(tcp_len);
 
     // 2. TCP Header (Temporary zero out checksum field)
@@ -79,20 +84,30 @@ uint16_t tcp_checksum(struct ipv4_header *ip, struct tcp_header *tcp, uint8_t *p
     return (uint16_t)(~sum);
 }
 
-int tcp_validate_checksum(struct ipv4_header *ip, struct tcp_header *tcp, uint8_t *payload, uint32_t payload_len) {
-    // For validation, we don't zero out the checksum. 
-    // If the packet is valid, the sum over everything (including pseudo-header) 
-    // will result in 0xFFFF when inverted, or 0 when not.
-    uint16_t calc = tcp_checksum(ip, tcp, payload, payload_len);
-    
-    if (calc == tcp->checksum) return 1;
+int tcp_validate_checksum(struct ipv4_header *ip,
+                          struct tcp_header *tcp,
+                          uint8_t *payload,
+                          uint32_t payload_len)
+{
+    uint32_t sum = 0;
+    uint16_t tcp_len = sizeof(struct tcp_header) + payload_len;
 
-    // Debugging print for the Lead
-    uart_puts("[TCP] Checksum Failure! RX: ");
-    uart_put_hex_byte(tcp->checksum >> 8); uart_put_hex_byte(tcp->checksum & 0xFF);
-    uart_puts(" Expected: ");
-    uart_put_hex_byte(calc >> 8); uart_put_hex_byte(calc & 0xFF);
-    uart_puts("\r\n");
-    
-    return 0;
+    // Pseudo header
+    sum += (ip->src_ip >> 16) & 0xFFFF;
+    sum += ip->src_ip & 0xFFFF;
+    sum += (ip->dest_ip >> 16) & 0xFFFF;
+    sum += ip->dest_ip & 0xFFFF;
+    sum += 0x0006;
+    sum += tcp_len;
+
+    // Entire TCP segment INCLUDING checksum
+    sum = calculate_sum(tcp, sizeof(struct tcp_header), sum);
+
+    if (payload && payload_len > 0)
+        sum = calculate_sum(payload, payload_len, sum);
+
+    while (sum >> 16)
+        sum = (sum & 0xFFFF) + (sum >> 16);
+
+    return (sum == 0xFFFF);
 }

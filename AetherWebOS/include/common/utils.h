@@ -38,4 +38,11 @@ uint32_t str_len(const char* s);
 int str_contains(const char* haystack, const char* needle);
 void uart_put_ip(uint32_t ip);
 
+#include <stdarg.h>
+
+int ksnprintf(char *out,
+              unsigned int out_size,
+              const char *fmt,
+              ...);
+
 #endif

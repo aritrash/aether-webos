@@ -34,23 +34,40 @@ extern const char* aether_index_html;
  * portal_socket_wrapper: The high-level HTTP responder.
  * Routes traffic to HTML or JSON endpoints based on the GET request path.
  */
-void portal_socket_wrapper(uint8_t *data, size_t len, uint32_t src_ip, uint16_t src_port) {
-    if (len < 10) return;
+void portal_socket_wrapper(uint8_t *data,
+                           size_t len,
+                           uint32_t src_ip,
+                           uint16_t src_port)
+{
+    if (len < 5)
+        return;
 
-    // 1. Force a TCB lookup to ensure we are synced
-    struct tcp_control_block *tcb = tcp_find_tcb(src_ip, src_port);
-    if (!tcb) return;
+    struct tcp_control_block *tcb =
+        tcp_find_tcb(src_ip, src_port);
 
-    // 2. Combine HTTP Header + Body into the TCB buffer (if available) or send together
-    // Chrome often hangs if it doesn't see "Content-Length" when "Connection: close" is used.
-    
-    if (str_contains((char*)data, "GET / ")) {
-        uart_puts("[PORTAL] Executing Forced Response...\r\n");
-        
-        uint32_t html_len = str_len(aether_index_html);
-        tcp_send_data(src_ip, src_port, 80, (uint8_t*)aether_index_html, html_len);
-        
-        // 3. THE FIX: Force the FIN with an explicit ACK of the GET request
+    if (!tcb || tcb->state != TCP_ESTABLISHED)
+        return;
+
+    if (str_contains((char*)data, "GET / "))
+    {
+        const char *body = aether_index_html;
+        uint32_t body_len = str_len(body);
+
+        char header[256];
+        int header_len = ksnprintf(header, sizeof(header),
+            "HTTP/1.0 200 OK\r\n"
+            "Content-Length: %u\r\n"
+            "Connection: close\r\n"
+            "Content-Type: text/html\r\n"
+            "\r\n",
+            body_len);
+
+        tcp_send_data(src_ip, src_port, 80,
+                      (uint8_t*)header, header_len);
+
+        tcp_send_data(src_ip, src_port, 80,
+                      (uint8_t*)body, body_len);
+
         tcp_send_fin(src_ip, src_port, 80);
     }
 }

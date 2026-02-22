@@ -10,6 +10,7 @@
 #include "psci.h"
 #include "kernel/health.h"      // For health_check_syn_timeouts()
 #include "drivers/ethernet/tcp.h" // For tcp_init_stack()
+#include "drivers/ethernet/socket.h" // For socket_init()
 
 #include "drivers/virtio/virtio_pci.h"
 #include "drivers/virtio/virtio_net.h"
@@ -83,6 +84,7 @@ void kernel_main(void)
 
     // Initialize Native TCP Stack
     tcp_init_stack(); 
+    socket_init();
 
     /* 3. Portal Start */
     uint64_t last_refresh = 0;
@@ -94,18 +96,17 @@ void kernel_main(void)
     while (1) {
         uint64_t current_time = get_system_uptime_ms();
 
-        /* Task: Timeout Watchdog (Runs every 1 second) 
-           Prevents SYN-flood or stale connections. */
-        if (current_time - last_health_check >= 1000) {
-            health_check_syn_timeouts();
-            last_health_check = current_time;
-        }
+        static kernel_mode_t last_mode = -1;
 
-        /* UI RENDER (10 FPS) */
         if (current_time - last_refresh >= 100) {
-            if (uart_is_writable()) {
-                portal_refresh_state();
 
+            portal_refresh_state();
+
+            if (current_mode != last_mode) {
+                uart_puts("\033[2J\033[H");
+                last_mode = current_mode;
+
+                // Force one full render on mode change
                 switch (current_mode) {
                     case MODE_CONFIRM_SHUTDOWN:
                         portal_render_confirm_prompt();
@@ -120,8 +121,25 @@ void kernel_main(void)
                         portal_render_terminal();
                         break;
                 }
-                last_refresh = current_time;
             }
+            else {
+                // Only dynamic updates
+                switch (current_mode) {
+                    case MODE_NET_STATS:
+                        portal_render_net_dashboard();
+                        break;
+
+                    case MODE_PORTAL:
+                        portal_render_terminal();
+                        break;
+
+                    default:
+                        // Confirm screen: do nothing
+                        break;
+                }
+            }
+
+            last_refresh = current_time;
         }
 
         /* INPUT HANDLING */

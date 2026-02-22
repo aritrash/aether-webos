@@ -19,8 +19,8 @@ static void build_pseudo(struct ipv4_header *pseudo,
 {
     memset(pseudo, 0, sizeof(struct ipv4_header));
 
-    pseudo->src_ip  = __builtin_bswap32(src_ip);
-    pseudo->dest_ip = __builtin_bswap32(dst_ip);
+    pseudo->src_ip  = htonl(src_ip);
+    pseudo->dest_ip = htonl(dst_ip);
     pseudo->protocol = 6;  // TCP
     pseudo->total_len = htons(tcp_len);
 }
@@ -101,14 +101,15 @@ void tcp_send_data(uint32_t dst_ip,
     struct tcp_control_block *tcb =
         tcp_find_tcb(dst_ip, dst_port);
 
-    if (!tcb || tcb->state != TCP_ESTABLISHED)
+    if (!tcb)
         return;
 
-    uint32_t packet_len =
-        sizeof(struct tcp_header) + len;
+    if (tcb->state != TCP_ESTABLISHED)
+        return;
 
-    struct tcp_header *reply =
-        kmalloc(packet_len);
+    uint32_t packet_len = sizeof(struct tcp_header) + len;
+
+    struct tcp_header *reply = kmalloc(packet_len);
     if (!reply)
         return;
 
@@ -127,10 +128,7 @@ void tcp_send_data(uint32_t dst_ip,
            len);
 
     struct ipv4_header pseudo;
-    build_pseudo(&pseudo,
-                 aether_ip,
-                 dst_ip,
-                 packet_len);
+    build_pseudo(&pseudo, aether_ip, dst_ip, packet_len);
 
     reply->checksum =
         tcp_checksum(&pseudo,
@@ -138,11 +136,8 @@ void tcp_send_data(uint32_t dst_ip,
                      (uint8_t *)reply + sizeof(struct tcp_header),
                      len);
 
-    ipv4_send(dst_ip, 6,
-              (uint8_t *)reply,
-              packet_len);
+    ipv4_send(dst_ip, 6, (uint8_t *)reply, packet_len);
 
-    /* Data consumes sequence space */
     tcb->snd_nxt += len;
 
     kfree(reply);
@@ -160,53 +155,32 @@ void tcp_handle(uint8_t *segment,
     if (len < sizeof(struct tcp_header))
         return;
 
-    struct tcp_header *tcp =
-        (struct tcp_header *)segment;
+    struct tcp_header *tcp = (struct tcp_header *)segment;
 
-    uint32_t header_len =
-        (tcp->data_offset >> 4) * 4;
-
+    uint32_t header_len = (tcp->data_offset >> 4) * 4;
     if (len < header_len)
         return;
 
-    uint8_t *payload =
-        segment + header_len;
+    uint8_t *payload = segment + header_len;
+    uint32_t payload_len = len - header_len;
 
-    uint32_t payload_len =
-        len - header_len;
-
-    /* Validate checksum */
     struct ipv4_header pseudo;
-    build_pseudo(&pseudo,
-                 src_ip,
-                 dest_ip,
-                 len);
+    build_pseudo(&pseudo, src_ip, dest_ip, len);
 
-    if (!tcp_validate_checksum(&pseudo,
-                               tcp,
-                               payload,
-                               payload_len))
+    if (!tcp_validate_checksum(&pseudo, tcp, payload, payload_len))
         return;
 
-    uint16_t src_port =
-        ntohs(tcp->src_port);
-
-    uint16_t dest_port =
-        ntohs(tcp->dest_port);
-
-    uint32_t incoming_seq =
-        ntohl(tcp->seq);
+    uint16_t src_port  = ntohs(tcp->src_port);
+    uint16_t dest_port = ntohs(tcp->dest_port);
+    uint32_t incoming_seq = ntohl(tcp->seq);
+    uint32_t incoming_ack = ntohl(tcp->ack_seq);
 
     struct tcp_control_block *tcb =
         tcp_find_tcb(src_ip, src_port);
 
-    /* ===================================================== */
-    /* SYN (Client → Server)                                */
-    /* ===================================================== */
+    /* ========================= SYN ========================= */
 
-    if ((tcp->flags & TCP_SYN) &&
-        !tcb &&
-        dest_port == 80)
+    if ((tcp->flags & TCP_SYN) && !tcb && dest_port == 80)
     {
         tcb = tcp_allocate_tcb();
         if (!tcb)
@@ -217,8 +191,9 @@ void tcp_handle(uint8_t *segment,
         tcb->local_port  = dest_port;
 
         tcb->rcv_nxt = incoming_seq + 1;
-        tcb->snd_nxt = 1000;      /* initial server seq */
-        tcb->rcv_wnd = 4096;
+        tcb->snd_nxt = 0;
+        tcb->snd_una = 0;
+        tcb->rcv_wnd = 8192;
         tcb->state   = TCP_SYN_RCVD;
 
         tcp_send_synack(tcb);
@@ -228,23 +203,22 @@ void tcp_handle(uint8_t *segment,
     if (!tcb)
         return;
 
-    /* Promote to ESTABLISHED */
+    /* ========================= ACK (Handshake Completion) ========================= */
+
     if (tcb->state == TCP_SYN_RCVD &&
-        (tcp->flags & TCP_ACK))
+        (tcp->flags & TCP_ACK) &&
+        incoming_ack == tcb->snd_nxt)
     {
         tcb->state = TCP_ESTABLISHED;
     }
 
-    /* ===================================================== */
-    /* Payload                                               */
-    /* ===================================================== */
+    /* ========================= PAYLOAD ========================= */
 
-    if (payload_len > 0)
+    if (tcb->state == TCP_ESTABLISHED && payload_len > 0)
     {
         if (incoming_seq == tcb->rcv_nxt)
         {
             tcb->rcv_nxt += payload_len;
-
             tcp_send_ack(tcb);
 
             socket_handle_packet(dest_port,
@@ -255,15 +229,20 @@ void tcp_handle(uint8_t *segment,
         }
     }
 
-    /* ===================================================== */
-    /* FIN                                                   */
-    /* ===================================================== */
+    /* ========================= FIN ========================= */
 
     if (tcp->flags & TCP_FIN)
     {
         tcb->rcv_nxt += 1;
         tcp_send_ack(tcb);
         tcb->state = TCP_CLOSE_WAIT;
+    }
+
+    /* ========================= RST ========================= */
+
+    if (tcp->flags & TCP_RST)
+    {
+        tcb->state = TCP_CLOSED;
     }
 }
 
