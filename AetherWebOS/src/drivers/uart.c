@@ -1,5 +1,6 @@
 #include "uart.h"
 #include "config.h"
+#include "kernel/mode.h"
 
 #include <stdint.h>
 
@@ -125,16 +126,44 @@ void uart_print_hex16(uint16_t val) {
     }
 }
 
-void uart_print_ip(uint32_t ip) {
-    for (int i = 0; i < 4; i++) {
-        uart_put_int((ip >> (i * 8)) & 0xFF);
-        if (i < 3) uart_putc('.');
-    }
+void uart_print_ip(uint32_t ip)
+{
+    uart_put_int((ip >> 24) & 0xFF);
+    uart_putc('.');
+    uart_put_int((ip >> 16) & 0xFF);
+    uart_putc('.');
+    uart_put_int((ip >> 8) & 0xFF);
+    uart_putc('.');
+    uart_put_int(ip & 0xFF);
 }
+
+uint8_t local_ipv6[16] = {
+    0xfe,0x80,0,0,0,0,0,0,
+    0x52,0x54,0x00,0xff,
+    0xfe,0x12,0x34,0x56
+};
 
 /* Helper to convert byte to hex for UART display */
 void uart_put_hex_byte(uint8_t byte) {
     const char *hex = "0123456789ABCDEF";
     uart_putc(hex[(byte >> 4) & 0xF]);
     uart_putc(hex[byte & 0xF]);
+}
+
+extern kernel_mode_t current_mode;
+
+void uart_debugps(const char *str)
+{
+    if (current_mode != MODE_DEBUG)
+        return;
+
+    uart_puts(str);
+}
+
+void uart_debugpc(char c)
+{
+    if (current_mode != MODE_DEBUG)
+        return;
+
+    uart_putc(c);
 }

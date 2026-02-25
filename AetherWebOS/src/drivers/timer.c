@@ -29,10 +29,7 @@ void handle_timer_irq() {
     // Set for another 10ms (assuming 100Hz)
     uint64_t frq;
     asm volatile ("mrs %0, cntfrq_el0" : "=r" (frq));
-    asm volatile ("msr cntp_tval_el0, %0" : : "r" (frq / 100));
-
-    // 3. Debug: Add this to prove life
-    uart_putc('.'); 
+    asm volatile ("msr cntp_tval_el0, %0" : : "r" (frq / 100)); 
 }
 
 uint64_t get_system_uptime_ms() {

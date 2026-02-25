@@ -1,152 +1,344 @@
-# AETHER WEBOS
-**"Surgical Precision in Bare-Metal AArch64"**
+# Aether Project
 
-Aether WebOS is a custom, from-scratch 64-bit operating system designed for the ARMv8-A architecture (QEMU `virt` board). This version marks the transition from a pure "educational" kernel to a hardware-interfacing system capable of network and peripheral communication.
+> Aether is a long-term systems research initiative focused on building a fully independent operating system stack — from boot to TCP — across two parallel implementations:
+>
+> - **AetherWebOS/** → C-based bare-metal AArch64 kernel  
+> - **AetherNxt/** → Rust-based next-generation experimental kernel  
+> - **buildfiles/** → Archived build snapshots and backups  
 
----
-
-## Recent Milestones: The "Hardware Bridge"
-We have successfully bridged the gap between the virtual CPU and physical-emulated hardware. 
-
-* **Custom PCIe Enumerator:** Implemented a full ECAM-based scanner that identifies devices, parses Class Codes, and surgically assigns physical memory addresses (BARs) in the `0x10000000` range.
-* **xHCI Host Controller:** Successfully initialized the USB 3.0 stack, including the BIOS-to-OS ownership handshake and controller reset.
-* **VirtIO-Net Modern (1.0):** Achieved a live hardware handshake with the VirtIO-Net PCI device. The kernel now correctly negotiates 64-bit features and reads the hardware MAC address.
+This repository is not a toy OS.  
+It is a structured attempt to understand and engineer a complete, hardware-aware, extensible operating system architecture from first principles.
 
 ---
 
-## System Architecture
+# Repository Layout
 
-### 1. Memory Management (MMU)
-Aether uses a multi-level page table system with **L3 Surgical Mapping**.
-- **Identity Mapping:** `0x40000000 - 0x48000000` (Kernel & RAM).
-- **Peripheral Bridge:** `0x08000000 - 0x0A000000` (GIC, UART).
-- **ECAM PCIe Bridge:** `0x70000000` (PCI Configuration Space).
-- **PCIe MMIO Space:** `0x10000000+` (Dynamic BAR assignment).
-
-### 2. The VirtIO Data Path (Current Focus)
-We are currently implementing the **Virtqueue Shared Memory** model to enable high-speed Ethernet communication.
-- **Descriptor Table:** The "Map" of where data sits in RAM.
-- **Available Ring:** The "Outbox" where the OS sends commands to hardware.
-- **Used Ring:** The "Inbox" where the hardware reports finished tasks.
+```
+Aether/
+│
+├── aetherwebos/   # C implementation (primary research kernel)
+├── aethernxt/     # Rust implementation (experimental next-gen kernel)
+├── buildfiles/    # tar.gz archived builds and snapshots
+└── README.md
+```
 
 ---
 
-## The Development Team & Jobs
+# Project Vision
 
-| Lead / Member | Focus Area | Status |
-| :--- | :--- | :--- |
-| **Aritrash** | **Project Lead / Kernel& PCIe** | 🟢 LIVE |
-| **Ankana** | **Web GUI & Frontend Architecture** | 🟡 DESIGNING |
-| **Pritam** | **Memory Architect (Queue Binding) and drivers (xHCI)** | 🟡 IN PROGRESS |
-| **Roheet** | **The Dispatcher (TX / Doorbell) and drivers (VirtIO-Net)** | 🟢 READY |
-| **Adrija** | **The Harvester (RX / Garbage Collection) and ioremap** | 🟡 IN PROGRESS |
+The Aether Project exists to explore:
+
+- Bare-metal AArch64 systems programming
+- Custom TCP/IP stack implementation
+- VirtIO and PCIe driver development
+- Memory management without libc
+- Long-term ARM server experimentation
+- Cross-language kernel architecture (C + Rust)
+
+The goal is not “make it boot”.
+
+The goal is:
+
+> Build a clean, correct, extensible systems foundation.
 
 ---
 
-## Current Debug Logs (Successful Boot)
-```text
-  _____  _____ _____ _   _ _____ ____
- | ___ || ____|_   _| | | | ____|  _ \
- | |_| ||  _|   | | | |_| |  _| | |_) |
- | ___ || |___  | | |  _  | |___|  _ <
- |_| |_||_____| |_| |_| |_|_____|_| \_\
- =====================================
-       AETHER OS :: Kernel v0.1.2
- =====================================
-[INFO] Kernel Loaded at: 0x0000000040081280
-[OK] Aether Core Online.
-[OK] Exception Vector Table Loaded.
-[INFO] MMU: Configuring AETHER OS Memory Map...
-[OK] MMU ACTIVE: Identity & ECAM Bridge Online.
-[OK] MMU Active (L3 Surgical Mapping Enabled).
-[OK] Memory Subsystem: Online (Expanded L3 Support Active).
-[OK] Kernel Heap Ready.
+# aetherwebos/ (C Edition)
 
-[INFO] PCIe: Initializing Aether OS PCIe Subsystem...
+### Language
+C (freestanding, no POSIX, no libc)
 
---- [DEBUG] PCI Header: 00:0.0 ---
-0x0000000000000000: 0x0000000000081B36 0x0000000000000000 0x0000000006000000 0x0000000000000000
-0x0000000000000010: 0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000000000000000
-0x0000000000000020: 0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000000011001AF4
-0x0000000000000030: 0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000000000000000
-    -> Matching Driver: QEMU PCI Bridge
+### Target
+- AArch64
+- QEMU `virt` machine
+- Future: Raspberry Pi / ARM hardware
 
---- [DEBUG] PCI Header: 00:1.0 ---
-0x0000000000000000: 0x00000000000D1B36 0x0000000000100000 0x000000000C033001 0x0000000000000000
-0x0000000000000010: 0x0000000000000004 0x0000000000000000 0x0000000000000000 0x0000000000000000
-0x0000000000000020: 0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000000011001AF4
-0x0000000000000030: 0x0000000000000000 0x0000000000000090 0x0000000000000000 0x0000000000000100
-    [PCI] Assigned 0x0000000010000000 to BAR 0
-    -> Matching Driver: Generic xHCI USB 3.0
-[INFO] USB: Initializing xHCI Controller...
-[INFO] USB: 64-bit BAR0 Address detected: 0x0000000010000000
-[INFO] USB: xHCI Version: 0x0000000000000100
-[USB] Legacy Support found. Requesting ownership...
-[OK] USB: BIOS ownership released.
-[INFO] USB: Resetting Controller...
-[OK] USB: xHCI Host Controller is READY.
+---
 
---- [DEBUG] PCI Header: 00:2.0 ---
-0x0000000000000000: 0x0000000010001AF4 0x0000000000100000 0x0000000002000000 0x0000000000000000
-0x0000000000000010: 0x0000000000000001 0x0000000000000000 0x0000000000000000 0x0000000000000000
-0x0000000000000020: 0x000000000000000C 0x0000000000000000 0x0000000000000000 0x0000000000011AF4
-0x0000000000000030: 0x0000000000000000 0x0000000000000098 0x0000000000000000 0x0000000000000100
-    [PCI] Assigned 0x0000000010100000 to BAR 0
-    [PCI] Assigned 0x0000000010200000 to BAR 4
-    -> Matching Driver: VirtIO Net Controller
-[INFO] VirtIO: Initializing PCI Transport...
-  -> Found VirtIO Cap Type: 5 (BAR 0)
-  -> Found VirtIO Cap Type: 2 (BAR 4)
-  -> Found VirtIO Cap Type: 4 (BAR 4)
-  -> Found VirtIO Cap Type: 3 (BAR 4)
-  -> Found VirtIO Cap Type: 1 (BAR 4)
-[OK] VirtIO: Mapping Successful.
-[INFO] VirtIO-Net: Starting Hardware Handshake...
-[OK] VirtIO-Net: Handshake Complete. Device is LIVE.
-[INFO] Hardware MAC: 0x0000000000000052:0x0000000000000054:0x0000000000000000:0x0000000000000012:
-0x0000000000000034:0x0000000000000056
-[OK] PCIe Enumeration Complete.
+## Implemented Features
 
-[OK] PCIe Enumeration & Driver Handshakes Complete.
-[INFO] GIC: Initializing Interrupt Controller...
-[OK] GIC: Ready to receive interrupts.
-[OK] GIC and Global Timer (1Hz) Online.
-[OK] Interrupts Unmasked (EL1). System is Operational.
-[INFO] Aether OS Entering Idle State (WFI)...
-```
-## How To Build & RUN
-Clone the repository. Then open a terminal in the directory, and then:
+### Kernel Core
+- AArch64 exception vectors
+- MMU initialization
+- Page table setup
+- Interrupt enabling
+- PSCI system shutdown
+- Custom linker script
+- Freestanding build flags
 
-1. Open docs/installers.md and follow the steps.
+---
 
-2. Run the installer after successful installation of the arm gnu toolchain from [ARM Developer](https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-mingw-w64-i686-aarch64-none-elf.msi)
+### Memory Management
+- Custom `kmalloc` / `kfree`
+- Kernel heap initialization
+- Memory tracking
+- No libc dependency
 
-3. Locate the bin/ folder in the installed folder (generally C:\Program Files (x86)\Arm GNU Toolchain aarch64-none-elf\14.3 rel1\bin in Windows) and add it to your environment variables.
+---
 
-4. Open MSYS2 UCRT64 terminal, and then
+### Timer & Interrupt System
+- GIC initialization
+- System timer
+- Uptime tracking
+- Optional low-power `wfi`
+
+---
+
+### UART Console
+- PL011 driver
+- ANSI terminal control
+- Boot banner (linked binary asset)
+- Portal UI system
+- Function-key navigation
+
+---
+
+### PCIe Subsystem
+- PCIe enumeration
+- Device discovery
+- VirtIO device detection
+
+---
+
+## Custom Networking Stack
+
+AetherWebOS includes a fully custom TCP/IP stack:
+
+### VirtIO-Net Driver
+- PCI-based VirtIO-Net
+- RX/TX descriptor ring handling
+- Poll-driven packet processing
+- QEMU user-mode networking compatible
+
+---
+
+### Ethernet Layer
+- Frame parsing
+- MAC filtering
+- EtherType demux
+- Frame construction
+
+---
+
+### ARP
+- ARP request handling
+- ARP reply generation
+- QEMU gateway compatibility
+- Static MAC resolution model
+
+---
+
+### IPv4
+- Header validation
+- Checksum verification
+- Network ↔ host byte order handling
+- Protocol demux:
+  - TCP
+  - UDP (stub)
+  - ICMP (stub)
+- No fragmentation support
+
+---
+
+### TCP Stack
+
+Structured minimal TCP implementation:
+
+- TCB (Transmission Control Block)
+- 4-tuple connection lookup
+- TCP states:
+  - LISTEN
+  - SYN_RECEIVED
+  - ESTABLISHED
+  - FIN handling states
+- Sequence tracking:
+  - snd_una
+  - snd_nxt
+  - rcv_nxt
+- ACK validation
+- Sequence validation
+- RST handling
+- FIN handling
+- Chrome-compatible handshake
+- Multiple parallel connections
+- Port 80 HTTP listener
+
+---
+
+### HTTP Server
+
+- Static HTML serving
+- HTTP GET detection
+- Content-Length generation
+- HTTP/1.0 compatible responses
+- Proper CRLF formatting
+- Connection close handling
+
+---
+
+## Running (C Kernel)
+
+Example QEMU command:
+
 ```bash
-nano ~/.bashrc
+qemu-system-aarch64 \
+  -M virt,gic-version=3,highmem=off \
+  -cpu max \
+  -m 1G \
+  -serial stdio \
+  -netdev user,id=net0,hostfwd=tcp::9090-:80 \
+  -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 \
+  -display none \
+  -machine virtualization=off \
+  -kernel kernel8.img
 ```
-And to the end of that file, add 
-```bash
-export PATH="$PATH:<your_bin_folder_path>"
-```
-Then save the file using Ctrl + O, then Enter, then Ctrl + X.
 
-5. Then, run the following command:
-```bash
-source ~/.bashrc
+Open in browser:
+
+```
+http://127.0.0.1:9090
 ```
 
-This should set the environment variable in your MSYS2 terminal. <strong>This is one-time only. Once done, its done - you don't have to repeat these steps to run the files every time. </strong>
+---
 
-###  Now to build, follow these steps:
+# aethernxt/ (Rust Edition)
 
-```bash
-make clean && make
-```
-Then, run
+### Language
+Rust (`#![no_std]`, bare-metal)
 
-```bash
-make BOARD=VIRT run
-```
+### Purpose
+AetherNxt is a clean-room experimental kernel designed to:
+
+- Explore Rust in systems programming
+- Build a safer TCP/IP architecture
+- Re-architect networking with ownership safety
+- Compare C vs Rust kernel design decisions
+
+This is not a port.  
+It is a parallel evolution.
+
+---
+
+## Goals of AetherNxt
+
+- Bare-metal AArch64 Rust kernel
+- UART driver in Rust
+- Custom memory allocator
+- VirtIO driver in Rust
+- Clean TCP stack designed with Rust ownership
+- Safer TCB lifetime management
+- Structured layering from day one
+
+---
+
+## Why Two Kernels?
+
+| Aspect | AetherWebOS (C) | AetherNxt (Rust) |
+|---------|-----------------|------------------|
+| Maturity | Primary | Experimental |
+| Stability | Higher | Early-stage |
+| Safety | Manual | Ownership enforced |
+| Goal | Production-style architecture | Modern research kernel |
+| Risk | Memory bugs possible | Borrow-checked |
+
+The two kernels inform each other.
+
+Lessons from C improve Rust architecture.  
+Rust experiments influence C refactoring.
+
+---
+
+# buildfiles/
+
+Contains:
+
+- Archived `.tar.gz` snapshots
+- Known-good build images
+- Experimental branch exports
+- Recovery checkpoints
+
+This directory exists to prevent architectural loss during major rewrites.
+
+---
+
+# Long-Term Roadmap
+
+### Kernel
+- SMP support
+- Preemptive scheduling
+- Virtual memory refinement
+
+### Networking
+- TCP retransmission timers
+- Basic congestion control
+- UDP full implementation
+- ICMP echo reply
+- ARP cache improvements
+
+### Filesystem
+- In-memory FS
+- SD/eMMC support
+- FAT/ext-like experimental FS
+
+### Hardware
+- Raspberry Pi deployment
+- ARM server experimentation
+- Clustered node research
+
+### Research Goals
+- ARM-based distributed compute nodes
+- Low-level infrastructure for AI workloads
+- Sustainable ARM server design exploration
+
+---
+
+# Design Philosophy
+
+- No lwIP
+- No Linux reuse
+- No shortcut stacks
+- Full control over every layer
+- Clean layering discipline
+- Research-grade architecture
+
+Aether is built to understand systems — not just to run them.
+
+---
+
+# Toolchains
+
+## C Kernel
+- `aarch64-none-elf-gcc`
+- `aarch64-none-elf-ld`
+- `aarch64-none-elf-objcopy`
+
+## Rust Kernel
+- `rustup`
+- `cargo`
+- `aarch64-unknown-none` target
+- `#![no_std]` environment
+
+---
+
+# License
+
+Apache License
+
+---
+
+# Maintainer
+
+Developed as part of a long-term systems engineering research initiative focused on:
+
+- Architecture
+- Networking
+- Hardware-software integration
+- Modern systems language comparison
+
+---
+
+# Aether
+
+Two kernels.  
+One architecture philosophy.  
+Built from first principles.
