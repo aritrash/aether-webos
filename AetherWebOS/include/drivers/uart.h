@@ -44,5 +44,7 @@ int uart_is_empty();
 void uart_print_hex16(uint16_t val);
 void uart_print_ip(uint32_t ip);
 void uart_put_hex_byte(uint8_t byte);
-
+extern uint8_t local_ipv6[16];
+void uart_debugps(const char *str);
+void uart_debugpc(char c);
 #endif

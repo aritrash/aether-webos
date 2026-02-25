@@ -27,8 +27,10 @@ CFLAGS += $(COMMON_FLAGS) -Wall -O2 -ffreestanding -nostdlib -nostdinc
 ASMFLAGS = $(COMMON_FLAGS)
 
 # --- Discovery ---
-SRCS_C := $(shell find $(SRC_DIR) $(ARCH_DIR) -name "*.c")
-SRCS_S := $(shell find $(SRC_DIR) $(ARCH_DIR) -name "*.S")
+SRCS_C := $(shell find $(SRC_DIR) -type f -name "*.c")
+SRCS_S := $(shell find $(SRC_DIR) -type f -name "*.S")
+SRCS_C += $(shell find $(ARCH_DIR) -type f -name "*.c")
+SRCS_S += $(shell find $(ARCH_DIR) -type f -name "*.S")
 OBJS := $(SRCS_C:%.c=$(BUILD_DIR)/%.o) $(SRCS_S:%.S=$(BUILD_DIR)/%.o) $(BUILD_DIR)/banner.o
 
 all: kernel8.img
@@ -55,7 +57,8 @@ ifeq ($(BOARD), VIRT)
     # Standard Serial + Network Forwarding
     QEMU_SERIAL = -serial stdio
     # hostfwd=tcp::8080-:80 maps Windows 8080 to Aether Port 80
-    QEMU_NET = -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8080-:80 -device virtio-net-pci,netdev=net0
+    QEMU_NET = -netdev user,id=net0,hostfwd=tcp::9090-:80 \
+               -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56
     QEMU_EXTRA = -display none -machine virtualization=off
 else
     KERNEL_ADDR = 0x80000

@@ -21,13 +21,6 @@ void str_clear(char* str);
 void str_append(char* str, const char* data);
 void str_append_kv_int(char* str, const char* key, uint64_t value);
 
-#define ntohs(x) ((((x) & 0xFF) << 8) | (((x) >> 8) & 0xFF))
-#define htons(x) ntohs(x)
-
-#define ntohl(x) (((x) >> 24) | (((x) & 0x00FF0000) >> 8) | \
-                  (((x) & 0x0000FF00) << 8) | ((x) << 24))
-#define htonl(x) ntohl(x)
-
 void *memcpy(void *dest, const void *src, size_t n);
 void mini_sprintf_telemetry(char* out, unsigned long rx, unsigned long tx, 
                             unsigned long err, unsigned long buf, 
@@ -44,5 +37,12 @@ int ksnprintf(char *out,
               unsigned int out_size,
               const char *fmt,
               ...);
+
+/* Byte order conversion (little-endian CPU) */
+
+uint16_t htons(uint16_t x);
+uint16_t ntohs(uint16_t x);
+uint32_t htonl(uint32_t x);
+uint32_t ntohl(uint32_t x);
 
 #endif

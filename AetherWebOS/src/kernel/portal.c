@@ -5,10 +5,9 @@
 #include "drivers/virtio/virtio_pci.h"
 #include "kernel/memory.h"
 #include "config.h"
-#include "utils.h"
+#include "common/utils.h"
 #include "kernel/health.h"
-#include "drivers/ethernet/tcp_state.h"
-#include "drivers/ethernet/tcp.h"
+#include "drivers/ethernet/tcp/tcp_internal.h"
 #include "drivers/ethernet/ipv4.h"
 
 extern struct virtio_pci_device *global_vnet_dev;
@@ -17,7 +16,6 @@ extern uint32_t aether_ip;
 
 static portal_state_t current_state;
 static int portal_active = 0;
-static int dashboard_initialized = 0;
 
 /* ===================================================== */
 /* STATE REFRESH                                         */
@@ -46,18 +44,17 @@ void portal_refresh_state()
 }
 
 /* ===================================================== */
-/* START                                                  */
+/* START                                                 */
 /* ===================================================== */
 
 void portal_start()
 {
     portal_active = 1;
-    dashboard_initialized = 0;
     uart_puts("\033[2J\033[H");
 }
 
 /* ===================================================== */
-/* NETWORK DASHBOARD                                     */
+/* NETWORK DASHBOARD                                    */
 /* ===================================================== */
 
 void portal_render_net_dashboard()
@@ -65,7 +62,6 @@ void portal_render_net_dashboard()
     if (!portal_active)
         return;
 
-    /* Move cursor home ONLY */
     uart_puts("\033[H");
 
     uart_puts("#################################################\n");
@@ -75,10 +71,7 @@ void portal_render_net_dashboard()
     uart_puts("[LINK LAYER]\n");
     uart_puts(" - Interface: eth0 (VirtIO-Net-PCI)\n");
     uart_puts(" - Status:    ");
-    if (current_state.link_status)
-        uart_puts("UP (10Gbps Full-Duplex)\n");
-    else
-        uart_puts("DOWN\n");
+    uart_puts(current_state.link_status ? "UP\n" : "DOWN\n");
 
     uart_puts(" - MAC:       ");
     for (int i = 0; i < 6; i++)
@@ -92,14 +85,7 @@ void portal_render_net_dashboard()
     uart_puts(" - IPv4 Addr: ");
     uart_print_ip(aether_ip);
     uart_puts("\n");
-
     uart_puts(" - IPv6 Addr: ");
-    uint8_t local_ipv6[16] =
-    {
-        0xfe,0x80,0,0,0,0,0,0,
-        0x52,0x54,0x00,0xff,
-        0xfe,0x12,0x34,0x56
-    };
     print_ipv6(local_ipv6);
     uart_puts("\n\n");
 
@@ -121,9 +107,26 @@ void portal_render_net_dashboard()
     uart_puts("\n\n");
 
     uart_puts("[TRANSPORT LAYER]\n");
-    uart_puts(" - TCP Listeners: Port 80 (HTTP)\n");
-    uart_puts(" - Active TCBs:      ");
-    uart_put_int(tcp_get_active_count());
+    uart_puts(" - TCP Listener: Port 80 (HTTP)\n");
+
+    /* Count active ESTABLISHED connections */
+    uint32_t active = 0;
+    tcp_tcb_t *cur = tcp_tcb_list;
+
+    while (cur)
+    {
+        if (cur->state == TCP_STATE_ESTABLISHED)
+            active++;
+
+        cur = cur->next;
+
+        uart_puts(" - Debug State: ");
+        uart_put_int(cur->state);
+        uart_puts("\n");
+    }
+
+    uart_puts(" - Active Connections: ");
+    uart_put_int(active);
     uart_puts("\n");
 
     uart_puts("\n-------------------------------------------------\n");
@@ -131,7 +134,7 @@ void portal_render_net_dashboard()
 }
 
 /* ===================================================== */
-/* TERMINAL MODE                                          */
+/* TERMINAL MODE                                         */
 /* ===================================================== */
 
 void portal_render_terminal()
@@ -147,30 +150,27 @@ void portal_render_terminal()
 
     uart_puts("[STATUS]  System Online\n");
 
-    uint64_t ms = current_state.uptime_ms;
-    uint32_t sec = (uint32_t)(ms / 1000);
+    //uint64_t ms = current_state.uptime_ms;
+    //uint32_t sec = (uint32_t)(ms / 1000);
 
-    uart_puts("[UPTIME]  ");
-    uart_put_int(sec / 60); uart_puts("m ");
-    uart_put_int(sec % 60); uart_puts("s ");
-    uart_put_int(ms % 1000); uart_puts("ms\n");
+    //uart_puts("[UPTIME]  ");
+    //uart_put_int(sec / 60); uart_puts("m ");
+    //uart_put_int(sec % 60); uart_puts("s ");
+    //uart_put_int(ms % 1000); uart_puts("ms\n");
 
     uart_puts("[MEMORY]  Used: ");
     uart_put_int(current_state.heap_usage_kb);
     uart_puts(" KB\n");
 
     uart_puts("[NETWORK] ");
-    if (current_state.link_status)
-        uart_puts("UP\n");
-    else
-        uart_puts("DOWN\n");
+    uart_puts(current_state.link_status ? "UP\n" : "DOWN\n");
 
     uart_puts("-------------------------------------------\n");
     uart_puts("Aether Ready.\n");
 }
 
 /* ===================================================== */
-/* CONFIRM PROMPT                                         */
+/* CONFIRM PROMPT                                        */
 /* ===================================================== */
 
 void portal_render_confirm_prompt()
@@ -180,27 +180,4 @@ void portal_render_confirm_prompt()
     uart_puts("#       CONFIRM SYSTEM SHUTDOWN?        #\n");
     uart_puts("#    [ENTER] Confirm | [ESC] Cancel     #\n");
     uart_puts("#########################################\n");
-}
-
-/* ===================================================== */
-/* STATIC HTTP PAGE                                      */
-/* ===================================================== */
-
-const char* aether_index_html = 
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/html\r\n"
-    "Connection: close\r\n\r\n"
-    "<html>"
-    "<head><title>Aether WebOS</title></head>"
-    "<body style='background:#000; color:#0f0; font-family:monospace;'>"
-    "<h1>Aether OS v0.1.7</h1>"
-    "<p>Kernel Status: ONLINE</p>"
-    "<p>Team: Roheet, Pritam, Adrija, Ankana</p>"
-    "</body>"
-    "</html>";
-
-void portal_serve_index(uint32_t src_ip, uint16_t src_port) {
-    uint32_t len = 0;
-    while (aether_index_html[len] != '\0') len++;
-    tcp_send_data(src_ip, src_port, 80, (uint8_t*)aether_index_html, len);
 }

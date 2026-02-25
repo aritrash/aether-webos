@@ -27,4 +27,6 @@ void health_check_syn_timeouts(void);
 // Task: Error Reporting - Hook for Pritam's logic
 void health_report_checksum_error(void);
 
+void health_update_tcp_stats(void);
+
 #endif
