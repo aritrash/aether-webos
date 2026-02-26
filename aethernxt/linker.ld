@@ -5,7 +5,7 @@ SECTIONS
     . = 0x40080000;
 
     .text : {
-        *(.text._start)
+        KEEP(*(.text.boot))
         *(.text*)
     }
 
@@ -17,11 +17,14 @@ SECTIONS
         *(.data*)
     }
 
-    .bss : {
-        *(.bss*)
-        *(COMMON)
-    }
+   .bss (NOLOAD) : {
+    __bss_start = .;
+    *(.bss*)
+    *(COMMON)
+    __bss_end = .;
+}
 
     . = ALIGN(16);
-    _stack_top = . + 0x4000;
+    . += 0x4000;
+    _stack_top = .;
 }

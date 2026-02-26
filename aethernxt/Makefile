@@ -1,32 +1,20 @@
-TARGET = aarch64-unknown-none
-BUILD = debug
-KERNEL = target/$(TARGET)/$(BUILD)/aethernxt
-
-QEMU = qemu-system-aarch64
-
-all: build
+KERNEL = target/aarch64-unknown-none/debug/aethernxt
+BIN = kernel8.img
 
 build:
 	cargo build
-
-release:
-	cargo build --release
+	llvm-objcopy -O binary $(KERNEL) $(BIN)
 
 run: build
-	$(QEMU) \
-		-machine virt \
-		-cpu cortex-a72 \
-		-nographic \
-		-kernel $(KERNEL)
-
-run-release: release
-	$(QEMU) \
-		-machine virt \
-		-cpu cortex-a72 \
-		-nographic \
-		-kernel target/$(TARGET)/release/aethernxt
+	qemu-system-aarch64 \
+		-M virt,gic-version=3,highmem=off \
+		-cpu max \
+		-m 1G \
+		-serial stdio \
+		-display none \
+		-machine virtualization=off \
+		-kernel $(BIN)
 
 clean:
 	cargo clean
-
-.PHONY: all build release run run-release clean
+	rm -f kernel8.img
