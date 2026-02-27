@@ -9,6 +9,13 @@ SECTIONS
         *(.text*)
     }
 
+    . = ALIGN(2048);
+    .vectors : {
+        __vectors_start = .;
+        KEEP(*(.vectors))
+        __vectors_end = .;
+    }
+
     .rodata : {
         *(.rodata*)
     }

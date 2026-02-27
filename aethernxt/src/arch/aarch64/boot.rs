@@ -45,6 +45,11 @@ setup_fpu:
     ldr x0, =_stack_top
     mov sp, x0
 
+    // ACtivate Vectors
+    ldr x0, =__vectors
+    msr vbar_el1, x0
+    isb
+
     // Clear BSS
     ldr x0, =__bss_start
     ldr x1, =__bss_end
